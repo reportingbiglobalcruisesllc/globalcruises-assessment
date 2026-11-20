@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Global Cruises — Online Assessment</title>
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#ffffff; --ink:#18212f; --muted:#64708a; --line:#dfe5ee; --soft:#eef2f7;
+  --brand:#0b4f8a; --brand-2:#0f6cbd; --brand-ink:#ffffff; --teal:#0e8f83;
+  --ok:#0a7d4f; --ok-bg:#e3f5ec; --warn:#a85d00; --warn-bg:#fff1dc; --bad:#b42318; --bad-bg:#fde8e6;
+  --code-bg:#0f1b2d; --code-ink:#e8eefc; --shadow:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0e141d; --panel:#16202e; --ink:#e7edf7; --muted:#92a0ba; --line:#263449; --soft:#1c2839;
+    --brand:#5aa9f0; --brand-2:#7fbbf4; --brand-ink:#08121f; --teal:#3cc9bb;
+    --ok:#4cd39b; --ok-bg:#12332a; --warn:#f0b35a; --warn-bg:#392a12; --bad:#ff8b7e; --bad-bg:#3b1c19;
+    --code-bg:#0a121e; --code-ink:#e8eefc; --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.hidden{display:none!important}
+h1,h2,h3{margin:0;line-height:1.25}
+code{font:13px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--soft);padding:1px 5px;border-radius:4px}
+pre.block{font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--code-bg);color:var(--code-ink);padding:12px 14px;border-radius:8px;overflow:auto;margin:10px 0}
+button{font:inherit;cursor:pointer}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px;border-radius:8px;font-weight:600;transition:background .15s,border-color .15s}
+.btn:hover{background:var(--soft)}
+.btn:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,.navbtn:focus-visible{outline:2px solid var(--brand-2);outline-offset:2px}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn.sm{padding:4px 10px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+input[type=text],input[type=password],input[type=email],input[type=number],textarea,select{
+  width:100%;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+label{display:block;font-weight:600;font-size:13px;margin:12px 0 5px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:22px}
+.muted{color:var(--muted)}
+.chip{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;background:var(--soft);color:var(--muted)}
+.chip.ok{background:var(--ok-bg);color:var(--ok)} .chip.warn{background:var(--warn-bg);color:var(--warn)} .chip.bad{background:var(--bad-bg);color:var(--bad)}
+.err{color:var(--bad);background:var(--bad-bg);border-radius:8px;padding:9px 12px;margin-top:12px;font-size:14px}
+.note{background:var(--soft);border-radius:8px;padding:10px 12px;font-size:14px}
+
+/* ---------- centered pages ---------- */
+.center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.2px;margin-bottom:6px}
+.brand .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--brand),var(--teal));display:grid;place-items:center;color:#fff;font-size:18px}
+.login{width:100%;max-width:400px}
+.home{width:100%;max-width:760px}
+.home ul{margin:8px 0 0 18px;padding:0} .home li{margin:5px 0}
+.cam-check{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.cam-box{width:200px;height:150px;background:#0b1220;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:#8da2c0;font-size:13px;text-align:center;padding:8px;flex:none}
+video.mirror{transform:scaleX(-1);width:100%;height:100%;object-fit:cover}
+
+/* ---------- exam ---------- */
+.bar{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:10px 18px}
+.bar .grow{flex:1;min-width:0}
+.bar .title{font-weight:800;white-space:nowrap}
+.timer{font:700 20px/1 ui-monospace,Consolas,monospace;padding:7px 12px;border-radius:9px;background:var(--soft)}
+.timer.warn{background:var(--warn-bg);color:var(--warn)} .timer.bad{background:var(--bad-bg);color:var(--bad);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.55}}
+.savest{font-size:12px;color:var(--muted);min-width:90px;text-align:right}
+.exam{display:grid;grid-template-columns:270px 1fr;gap:18px;padding:18px 18px 230px;max-width:1380px;margin:0 auto}   /* bottom space: the camera/calculator never hide the buttons */
+@media (max-width:900px){.exam{grid-template-columns:1fr}}
+.nav{position:sticky;top:78px;align-self:start;max-height:calc(100vh - 96px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+@media (max-width:900px){.nav{position:static;max-height:none}}
+.nav h4{margin:12px 6px 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.nav h4:first-child{margin-top:4px}
+.navbtn{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);padding:6px 8px;border-radius:7px;font-size:13.5px}
+.navbtn:hover{background:var(--soft)}
+.navbtn.cur{background:var(--brand);color:var(--brand-ink)}
+.dot{width:9px;height:9px;border-radius:50%;border:2px solid var(--muted);flex:none}
+.navbtn.done .dot{background:var(--ok);border-color:var(--ok)}
+.navbtn.cur .dot{border-color:var(--brand-ink)}
+.navbtn .n{opacity:.7;font-variant-numeric:tabular-nums;min-width:20px}
+.qhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.qtitle{font-size:20px;font-weight:800;margin:2px 0 10px}
+.prompt p{margin:0 0 10px} .prompt ul,.prompt ol{margin:0 0 10px 20px;padding:0}
+.opt{display:flex;gap:11px;align-items:flex-start;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:11px 13px;margin:8px 0;cursor:pointer}
+.opt:hover{border-color:var(--brand-2)}
+.opt.sel{border-color:var(--brand-2);background:color-mix(in srgb,var(--brand-2) 10%,var(--panel))}
+.opt input{margin-top:4px}
+.opt .l{font-weight:800;color:var(--muted);min-width:18px}
+.opt code{background:transparent;padding:0;font-size:13.5px;word-break:break-word}
+textarea.code{font:13.5px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--code-bg);color:var(--code-ink);border:1px solid #223149;border-radius:10px;min-height:240px;resize:vertical;tab-size:4;white-space:pre}
+textarea.essay{min-height:200px;resize:vertical}
+.runbar{display:flex;gap:10px;align-items:center;margin:10px 0;flex-wrap:wrap}
+.hint{font-size:12.5px;color:var(--muted)}
+.schema{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin:8px 0 12px}
+.tbl{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:8px 10px}
+.tbl b{font-size:13px}
+.tbl .cols{margin-top:4px;display:flex;flex-wrap:wrap;gap:4px}
+.tbl .cols span{font:12px ui-monospace,Consolas,monospace;background:var(--soft);padding:1px 6px;border-radius:4px}
+.tbl .cols span i{color:var(--muted);font-style:normal;margin-left:4px}
+details>summary{cursor:pointer;font-weight:700;margin:6px 0}
+.result{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;margin-top:6px}
+.result .rh{padding:8px 12px;background:var(--soft);font-size:13px;display:flex;justify-content:space-between;gap:10px}
+.rwrap{max-height:340px;overflow:auto}
+table.grid{border-collapse:collapse;width:100%;font-size:13px}
+table.grid th,table.grid td{border-bottom:1px solid var(--line);padding:5px 10px;text-align:left;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.grid th{position:sticky;top:0;background:var(--panel);font-weight:700}
+table.grid td.num{text-align:right} table.grid td.null{color:var(--muted);font-style:italic}
+table.grid td.wrap{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Consolas,monospace}
+.footnav{display:flex;justify-content:space-between;gap:10px;margin-top:22px}
+.cam-tile{position:fixed;right:14px;bottom:14px;width:176px;z-index:30;cursor:grab;touch-action:none;user-select:none;background:#0b1220;border-radius:12px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.35);border:2px solid var(--ok)}
+.cam-tile.off{border-color:var(--bad)}
+.cam-tile video{display:block;width:100%;height:132px;object-fit:cover}
+.cam-tile .st{font-size:11px;font-weight:700;text-align:center;padding:3px;color:#fff;background:var(--ok)} .cam-tile.off .st{background:var(--bad)}
+.overlay{position:fixed;inset:0;background:rgba(10,16,28,.6);z-index:60;display:grid;place-items:center;padding:16px}
+.modal{background:var(--panel);border-radius:14px;max-width:560px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.4);max-height:90vh;overflow:auto}
+.modal h3{margin-bottom:8px} .modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:22px;background:#18212f;color:#fff;padding:10px 16px;border-radius:10px;z-index:80;font-size:14px;box-shadow:var(--shadow);max-width:90vw}
+.spin{width:18px;height:18px;border:3px solid var(--line);border-top-color:var(--brand-2);border-radius:50%;display:inline-block;animation:sp .8s linear infinite;vertical-align:-4px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ---------- Excel sheet & listening ---------- */
+.sheet{max-height:330px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin:8px 0 12px;background:var(--panel)}
+.sheet table{border-collapse:collapse;font:12.5px ui-monospace,Consolas,monospace;width:max-content}
+.sheet th{position:sticky;top:0;z-index:1;background:var(--soft);color:var(--muted);font-weight:600;padding:3px 8px;border:1px solid var(--line)}
+.sheet tbody th{position:sticky;left:0;top:auto;z-index:0}
+.sheet td{padding:3px 8px;border:1px solid var(--line);white-space:nowrap}
+.sheet td.num{text-align:right} .sheet td.hd{font-weight:700;background:var(--soft)}
+input.xlf{font:15px ui-monospace,Consolas,monospace;flex:1;min-width:240px;width:auto}
+.audio{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border:1px dashed var(--line);border-radius:10px}
+
+/* ---------- built-in calculator ---------- */
+.calc{position:fixed;right:14px;bottom:186px;width:236px;z-index:31;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.3);padding:10px}
+.calc .ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.calc input{font:15px ui-monospace,Consolas,monospace;padding:7px 9px}
+.calc .cres{font:700 22px ui-monospace,Consolas,monospace;text-align:right;padding:6px 4px;min-height:36px;overflow-x:auto;white-space:nowrap}
+.calc .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:6px 0 8px}
+.calc .keys button{padding:8px 0;font-weight:700;font-size:15px;border-radius:7px}
+.calc .keys .op{background:var(--soft)}
+@media (max-width:900px){.calc{bottom:auto;top:70px}}
+
+/* ---------- admin ---------- */
+.admin{max-width:1180px;margin:0 auto;padding:18px}
+.tabs{display:flex;gap:6px;margin:16px 0}
+.tab{border:1px solid var(--line);background:var(--panel);padding:7px 14px;border-radius:99px;font-weight:700;color:var(--muted)}
+.tab.on{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+table.list{border-collapse:collapse;width:100%;font-size:14px}
+table.list th,table.list td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+table.list th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:var(--soft)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media (max-width:700px){.row2{grid-template-columns:1fr}}
+.bars{display:grid;gap:8px;margin:10px 0}
+.bar-row{display:grid;grid-template-columns:220px 1fr 70px;gap:10px;align-items:center;font-size:13.5px}
+.track{height:9px;border-radius:9px;background:var(--soft);overflow:hidden} .fill{height:100%;background:var(--teal)}
+.kv{display:flex;gap:6px;flex-wrap:wrap}
+.cred{font:15px ui-monospace,Consolas,monospace;background:var(--soft);padding:10px 12px;border-radius:8px;margin:8px 0;word-break:break-all}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<section id="v-login" class="view center">
+  <div class="card login">
+    <div class="brand"><span class="logo">⚓</span><span>Global Cruises</span></div>
+    <h2 style="margin:10px 0 2px">Online assessment</h2>
+    <p class="muted" style="margin:0 0 6px">Sign in with the username and password you received by email.</p>
+    <form id="loginForm" autocomplete="off">
+      <label for="lu">Username</label><input id="lu" type="text" autocapitalize="off" spellcheck="false" required>
+      <label for="lp">Password</label><input id="lp" type="password" required>
+      <div id="loginErr" class="err hidden"></div>
+      <button id="loginBtn" class="btn primary" style="width:100%;margin-top:18px;padding:11px" type="submit">Sign in</button>
+    </form>
+  </div>
+</section>
+
+<!-- ============ CANDIDATE HOME ============ -->
+<section id="v-home" class="view center hidden">
+  <div class="card home">
+    <div style="display:flex;justify-content:space-between;align-items:start;gap:10px">
+      <div><div class="brand"><span class="logo">⚓</span><span>Global Cruises</span></div>
+        <h2 id="hHello" style="margin-top:8px"></h2></div>
+      <button class="btn sm" data-act="logout">Sign out</button>
+    </div>
+    <div id="homeBody"></div>
+  </div>
+</section>
+
+<!-- ============ EXAM ============ -->
+<section id="v-exam" class="view hidden">
+  <header class="bar">
+    <span class="title">⚓ Online assessment</span>
+    <span class="grow muted" id="barSec" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <button class="btn sm" id="calcBtn" title="Calculadora / Calculator">🧮 Calculator</button>
+    <button class="btn sm" id="langBtn"title="Cambiar el idioma de las preguntas / Switch the language of the questions">Español</button>
+    <span class="savest" id="saveSt"></span>
+    <span class="timer" id="timer" role="timer" aria-label="Time remaining">--:--</span>
+    <button class="btn primary" id="finishBtn">Finish</button>
+  </header>
+  <div class="exam">
+    <nav class="nav" id="nav" aria-label="Questions"></nav>
+    <main id="qmain"></main>
+  </div>
+  <div class="calc hidden" id="calc" role="dialog" aria-label="Calculator">
+    <div class="ch"><b>🧮 Calculator</b><button class="btn sm" id="calcX" aria-label="Close calculator">✕</button></div>
+    <input id="calcIn" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="1260000 / (1800 * 7)">
+    <div class="cres" id="calcRes" aria-live="polite">0</div>
+    <div class="keys" id="calcKeys"></div>
+    <button class="btn sm primary" id="calcUse" style="width:100%">Use result as my answer</button>
+  </div>
+  <div class="cam-tile" id="camTile"><video id="camExam" class="mirror" autoplay muted playsinline></video><div class="st" id="camSt">Camera on</div></div>
+</section>
+
+<!-- ============ DONE ============ -->
+<section id="v-done" class="view center hidden">
+  <div class="card home" style="text-align:center">
+    <div style="font-size:44px">✅</div>
+    <h2 style="margin:6px 0">Assessment submitted</h2>
+    <p class="muted">Thank you. Your answers were received and the Human Resources team will contact you about next steps.<br>You can close this window.</p>
+    <button class="btn" data-act="logout" style="margin-top:8px">Sign out</button>
+  </div>
+</section>
+
+<!-- ============ ADMIN ============ -->
+<section id="v-admin" class="view hidden">
+  <header class="bar"><span class="title">⚓ Assessment admin</span><span class="grow"></span><span class="muted" id="admName"></span><button class="btn sm" data-act="logout">Sign out</button></header>
+  <div class="admin">
+    <div class="tabs" id="admTabs">
+      <button class="tab on" data-tab="cands">Candidates</button>
+      <button class="tab" data-tab="new">New candidate</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </div>
+    <div id="admBody"></div>
+  </div>
+</section>
+
+<div id="layer"></div>
+<div id="toastBox"></div>
+
+<script>
+'use strict';
+/* ====================================================================
+ *  Global Cruises — Analyst Assessment (client)
+ *  Code questions run IN THE BROWSER (sql.js = SQLite, Pyodide = Python)
+ *  inside Web Workers with a hard timeout. The server compares the
+ *  produced output with expected data that never leaves the server.
+ * ==================================================================== */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/* Backend access. Inside Apps Script the page talks through google.script.run. When this same file is hosted
+   elsewhere (needed for the webcam, which Apps Script's iframe blocks) it calls the web app's JSON API instead. */
+const API_URL = 'https://script.google.com/macros/s/AKfycbzOXAhZ8HviJ-GSZLeVFVArIP1WwE89SMU0uJdNdHwRBMmiDI0c3jGQsmwsC0TIq6RT/exec';
+const HAS_GAS = typeof google !== 'undefined' && google.script && google.script.run;
+const gasCall = (fn, a) => new Promise((resolve, reject) => {
+  google.script.run.withSuccessHandler(resolve).withFailureHandler(e => reject(new Error((e && e.message) || String(e))))[fn](...a);
+});
+async function httpCall(fn, a) {
+  let r;
+  try { r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn, args: a }) }); }
+  catch (e) { throw new Error('Cannot reach the server. Check your internet connection.'); }
+  let j; try { j = await r.json(); } catch (e) { throw new Error('Unexpected server response (' + r.status + ').'); }
+  if (!j.ok) throw new Error(String(j.error || 'Server error').replace(/^Error: /, ''));
+  return j.result;
+}
+const api = new Proxy({}, { get: (_, fn) => (...a) => HAS_GAS ? gasCall(fn, a) : httpCall(fn, a) });
+const store = { get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }, del(k) { try { sessionStorage.removeItem(k); } catch (e) {} } };
+
+const S = { token: null, role: null, name: '', username: '', cameraRequired: true,
+  q: [], i: 0, ans: {}, seed: '', deadline: 0, skew: 0, timer: null, dirty: new Set(), saveChain: Promise.resolve(), saveTimer: null,
+  submitted: false, finishing: false, inExam: false, cam: null, camOk: false, camErr: '', lastBlur: 0,
+  lang: (() => { try { return localStorage.getItem('gc_lang') === 'es' ? 'es' : 'en'; } catch (e) { return 'en'; } })() };
+
+/* ------------------------------ helpers ------------------------------ */
+function show(id) { $$('.view').forEach(v => v.classList.toggle('hidden', v.id !== id)); window.scrollTo(0, 0); }
+function toast(msg, ms = 3500) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; $('#toastBox').appendChild(t);
+  setTimeout(() => t.remove(), ms);
+}
+function modal(html, actions) {
+  return new Promise(resolve => {
+    const o = document.createElement('div'); o.className = 'overlay';
+    o.innerHTML = '<div class="modal" role="dialog" aria-modal="true">' + html + '<div class="actions"></div></div>';
+    const box = $('.actions', o);
+    actions.forEach(a => { const b = document.createElement('button'); b.className = 'btn ' + (a.kind || ''); b.textContent = a.label; b.onclick = () => { o.remove(); resolve(a.value); }; box.appendChild(b); });
+    $('#layer').appendChild(o);
+    const f = $('.btn.primary', o) || $('.btn', o); f && f.focus();
+  });
+}
+const confirmBox = (title, html, ok = 'Confirm', kind = 'primary') => modal('<h3>' + esc(title) + '</h3><div>' + html + '</div>', [{ label: 'Cancel', value: false }, { label: ok, value: true, kind }]);
+function busyOverlay(msg) {
+  const o = document.createElement('div'); o.className = 'overlay'; o.id = 'busy';
+  o.innerHTML = '<div class="modal" style="text-align:center"><span class="spin"></span> <span id="busyMsg" style="margin-left:8px">' + esc(msg) + '</span></div>';
+  $('#layer').appendChild(o); return { set: m => { const e = $('#busyMsg'); if (e) e.textContent = m; }, close: () => o.remove() };
+}
+const fmtDate = ms => ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+const pad2 = n => String(n).padStart(2, '0');
+const fmtClock = s => { s = Math.max(0, Math.ceil(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return (h ? h + ':' : '') + pad2(m) + ':' + pad2(s % 60); };
+function isSessionErr(e) { return /SESSION_EXPIRED/.test(e && e.message || ''); }
+
+/* mini-markdown for prompts: ```blocks```, `code`, **bold**, lists, paragraphs */
+function inline(t) { return esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>'); }
+function fmt(text) {
+  return String(text).split('```').map((part, i) => {
+    if (i % 2) return '<pre class="block">' + esc(part.replace(/^\n/, '').replace(/\n$/, '')) + '</pre>';
+    const out = []; let list = null, para = [];
+    const flushPara = () => { if (para.length) { out.push('<p>' + para.join('<br>') + '</p>'); para = []; } };
+    const flushList = () => { if (list) { out.push('<' + list.t + '>' + list.items.map(x => '<li>' + x + '</li>').join('') + '</' + list.t + '>'); list = null; } };
+    part.split('\n').forEach(line => {
+      let m;
+      if ((m = line.match(/^\s*-\s+(.*)/))) { flushPara(); if (!list || list.t !== 'ul') { flushList(); list = { t: 'ul', items: [] }; } list.items.push(inline(m[1])); }
+      else if ((m = line.match(/^\s*\d+\.\s+(.*)/))) { flushPara(); if (!list || list.t !== 'ol') { flushList(); list = { t: 'ol', items: [] }; } list.items.push(inline(m[1])); }
+      else if (line.trim() === '') { flushPara(); flushList(); }
+      else { flushList(); para.push(inline(line)); }
+    });
+    flushPara(); flushList(); return out.join('');
+  }).join('');
+}
+
+/* ------------------------------ code runners (Web Workers) ------------------------------ */
+function workerMain() {
+  const SQLJS = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/';
+  const PYO = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
+  let SQL = null, seedBytes = null, seedKey = null, py = null;
+  const HARNESS = `
+import json
+def __run(code, fn, tests_json):
+    ns = {}
+    try:
+        exec(code, ns)
+    except BaseException as e:
+        return json.dumps({"error": type(e).__name__ + ": " + str(e)})
+    f = ns.get(fn)
+    if f is None or not callable(f):
+        return json.dumps({"error": "Function '" + fn + "' is not defined"})
+    res = []
+    for args in json.loads(tests_json):
+        try:
+            res.append({"ok": True, "value": f(*args)})
+        except BaseException as e:
+            res.append({"ok": False, "error": type(e).__name__ + ": " + str(e)})
+    return json.dumps({"results": res}, default=str)
+`;
+  async function initSql() { if (SQL) return; importScripts(SQLJS + 'sql-wasm.js'); SQL = await initSqlJs({ locateFile: f => SQLJS + f }); }
+  async function initPy() { if (py) return; importScripts(PYO + 'pyodide.js'); py = await loadPyodide({ indexURL: PYO }); py.runPython(HARNESS); }
+  self.onmessage = async (ev) => {
+    const m = ev.data, id = m.id, reply = o => self.postMessage(Object.assign({ id }, o));
+    try {
+      if (m.cmd === 'init-sql') { await initSql(); reply({ ok: true }); }
+      else if (m.cmd === 'init-py') { await initPy(); reply({ ok: true }); }
+      else if (m.cmd === 'sql') {
+        await initSql();
+        if (!seedBytes || seedKey !== m.seed.length) { const d = new SQL.Database(); d.run(m.seed); seedBytes = d.export(); d.close(); seedKey = m.seed.length; }
+        const db = new SQL.Database(seedBytes);
+        try {
+          let res = db.exec(m.code);
+          if (m.view) res = db.exec('SELECT * FROM ' + m.view);
+          const last = res.length ? res[res.length - 1] : null;
+          reply({ ok: true, columns: last ? last.columns : [], rows: last ? last.values.slice(0, m.limit) : [], total: last ? last.values.length : 0, stmts: res.length });
+        } finally { db.close(); }
+      }
+      else if (m.cmd === 'py') {
+        await initPy();
+        const out = []; py.setStdout({ batched: s => out.push(s) });
+        py.globals.set('__code', m.code); py.globals.set('__fn', m.fn); py.globals.set('__tests', JSON.stringify(m.tests));
+        const r = JSON.parse(py.runPython('__run(__code, __fn, __tests)'));
+        reply(Object.assign({ ok: !r.error, stdout: out.join('\n').slice(0, 4000) }, r));
+      }
+    } catch (e) { reply({ ok: false, error: String(e && e.message || e) }); }
+  };
+}
+class Runner {
+  constructor(kind) { this.kind = kind; this.w = null; this.seq = 0; this.pending = new Map(); this.inited = null; }
+  spawn() {
+    const blob = new Blob(['(' + workerMain.toString() + ')()'], { type: 'text/javascript' });
+    this.w = new Worker(URL.createObjectURL(blob));
+    this.w.onmessage = e => { const p = this.pending.get(e.data.id); if (!p) return; this.pending.delete(e.data.id); clearTimeout(p.t); e.data.ok ? p.res(e.data) : p.rej(new Error(e.data.error || 'Failed')); };
+    this.w.onerror = e => { const msg = 'Could not load the ' + (this.kind === 'sql' ? 'SQL' : 'Python') + ' engine (' + (e.message || 'network blocked?') + '). Check your internet connection.'; this.kill(msg); };
+  }
+  call(cmd, payload, timeout) {
+    if (!this.w) this.spawn();
+    const id = ++this.seq;
+    return new Promise((res, rej) => {
+      const t = setTimeout(() => { this.pending.delete(id); this.kill(); rej(new Error('Stopped after ' + Math.round(timeout / 1000) + ' s. Check for an infinite loop or a very heavy query.')); }, timeout);
+      this.pending.set(id, { res, rej, t });
+      this.w.postMessage(Object.assign({ id, cmd }, payload));
+    });
+  }
+  kill(reason) {
+    if (this.w) { try { this.w.terminate(); } catch (e) {} }
+    this.w = null; this.inited = null;
+    this.pending.forEach(p => { clearTimeout(p.t); p.rej(new Error(reason || 'Engine restarted')); }); this.pending.clear();
+  }
+  warm() { if (!this.inited) this.inited = this.call('init-' + this.kind, {}, 120000).catch(e => { this.inited = null; throw e; }); return this.inited; }
+  async run(payload, timeout = 10000) { await this.warm(); return this.call(this.kind, payload, timeout); }
+}
+const sqlRunner = new Runner('sql'), pyRunner = new Runner('py');
+
+/* ------------------------------ Excel formula evaluator ------------------------------
+   Supports the functions an analyst uses daily, in English or Spanish, with "," or ";" as separator.
+   Errors are VALUES (#N/A, #DIV/0!...) like in Excel, so IFERROR works. */
+/*EXCEL-START*/
+const XL = (() => {
+  const ALIAS = { 'SUMA': 'SUM', 'PROMEDIO': 'AVERAGE', 'CONTAR': 'COUNT', 'CONTARA': 'COUNTA', 'CONTAR.SI': 'COUNTIF', 'CONTAR.SI.CONJUNTO': 'COUNTIFS',
+    'SUMAR.SI': 'SUMIF', 'SUMAR.SI.CONJUNTO': 'SUMIFS', 'PROMEDIO.SI': 'AVERAGEIF', 'PROMEDIO.SI.CONJUNTO': 'AVERAGEIFS', 'REDONDEAR': 'ROUND',
+    'SI': 'IF', 'SI.ERROR': 'IFERROR', 'BUSCARV': 'VLOOKUP', 'BUSCARX': 'XLOOKUP', 'INDICE': 'INDEX', 'ÍNDICE': 'INDEX', 'COINCIDIR': 'MATCH',
+    'Y': 'AND', 'O': 'OR', 'VERDADERO': 'TRUE', 'FALSO': 'FALSE' };
+  class XErr { constructor(code) { this.code = code; } }
+  const isE = v => v instanceof XErr, E = c => new XErr(c);
+  const colIdx = s => { let n = 0; for (const ch of s.toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+  const RX = { fn: /^([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-z0-9.ÁÉÍÓÚÑáéíóúñ]*)\s*\(/, ref: /^\$?([A-Za-z]{1,2})\$?(\d+)(?::\$?([A-Za-z]{1,2})\$?(\d+))?/,
+    num: /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/, name: /^[A-Za-zÁÉÍÓÚÑáéíóúñ]+/, op: /^(<=|>=|<>|[-+*/^&=<>(),;%])/ };
+  function tokenize(s) {
+    const out = []; let i = 0;
+    while (i < s.length) {
+      const rest = s.slice(i); let m;
+      if (/^\s/.test(rest)) { i++; continue; }
+      if (rest[0] === '"') {
+        let j = 1, v = '';
+        for (;;) { if (j >= rest.length) throw new Error('Text is missing its closing quote "'); if (rest[j] === '"') { if (rest[j + 1] === '"') { v += '"'; j += 2; continue; } break; } v += rest[j++]; }
+        out.push({ t: 'str', v }); i += j + 1; continue;
+      }
+      if ((m = RX.fn.exec(rest))) { out.push({ t: 'fn', v: m[1].toUpperCase() }); i += m[0].length; continue; }
+      if ((m = RX.ref.exec(rest)) && !/^[A-Za-z0-9]/.test(rest.slice(m[0].length))) { out.push({ t: 'ref', v: m }); i += m[0].length; continue; }
+      if ((m = RX.num.exec(rest))) { out.push({ t: 'num', v: parseFloat(m[0]) }); i += m[0].length; continue; }
+      if ((m = RX.name.exec(rest))) { out.push({ t: 'name', v: m[0].toUpperCase() }); i += m[0].length; continue; }
+      if ((m = RX.op.exec(rest))) { out.push({ t: 'op', v: m[0] === ';' ? ',' : m[0] }); i += m[0].length; continue; }
+      throw new Error('Unexpected character: ' + rest[0]);
+    }
+    return out;
+  }
+  const scalar = v => (v && v.range) ? (v.range.length === 1 && v.range[0].length === 1 ? v.range[0][0] : E('#VALUE!')) : v;
+  const num = v => { v = scalar(v); if (isE(v)) return v; if (v === null || v === undefined || v === '') return 0; if (typeof v === 'boolean') return v ? 1 : 0; if (typeof v === 'number') return v; const n = Number(String(v).trim()); return String(v).trim() !== '' && isFinite(n) ? n : E('#VALUE!'); };
+  const str = v => v === null || v === undefined ? '' : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : String(v);
+  const numLike = v => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)));
+  const looseEq = (a, b) => (a === null || b === null) ? a === b : (numLike(a) && numLike(b)) ? Number(a) === Number(b) : str(a).toLowerCase() === str(b).toLowerCase();
+  const cmpAny = (a, b) => (numLike(a) && numLike(b)) ? Number(a) - Number(b) : str(a).toLowerCase().localeCompare(str(b).toLowerCase());
+  const cmpOp = (d, o) => o === '=' ? d === 0 : o === '<>' ? d !== 0 : o === '<' ? d < 0 : o === '>' ? d > 0 : o === '<=' ? d <= 0 : d >= 0;
+  const truthy = v => { v = scalar(v); return typeof v === 'string' ? v.toUpperCase() === 'TRUE' : !!v; };
+  const flat = xs => { const out = []; xs.forEach(x => { if (x && x.range) x.range.forEach(r => r.forEach(c => out.push(c))); else out.push(x); }); return out; };
+  const list = x => (x && x.range) ? flat([x]) : [x];
+  function arith(a, b, o) {
+    a = num(a); if (isE(a)) return a; b = num(b); if (isE(b)) return b;
+    if (o === '+') return a + b; if (o === '-') return a - b; if (o === '*') return a * b; if (o === '^') return Math.pow(a, b);
+    return b === 0 ? E('#DIV/0!') : a / b;
+  }
+  function matcher(crit) {
+    crit = scalar(crit);
+    if (typeof crit === 'number') return v => looseEq(v, crit);
+    const m = /^(<=|>=|<>|<|>|=)?([\s\S]*)$/.exec(str(crit)), op = m[1] || '=', rhs = m[2];
+    if (numLike(rhs)) return v => op === '=' ? looseEq(v, rhs) : op === '<>' ? !looseEq(v, rhs) : numLike(v) && cmpOp(Number(v) - Number(rhs), op);
+    if (op === '=' || op === '<>') {
+      const re = new RegExp('^' + rhs.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+      return v => (op === '=') === re.test(str(v));
+    }
+    return v => cmpOp(cmpAny(v, rhs), op);
+  }
+  function mask(pairs) {
+    let mk = null;
+    for (let i = 0; i < pairs.length; i += 2) {
+      const vals = list(pairs[i]), f = matcher(pairs[i + 1]), cur = vals.map(f);
+      if (mk && mk.length !== cur.length) return E('#VALUE!');
+      mk = mk ? mk.map((x, k) => x && cur[k]) : cur;
+    }
+    return mk || [];
+  }
+  function aggIfs(valuesArg, pairs, avg) {
+    const vals = list(valuesArg), mk = mask(pairs); if (isE(mk)) return mk; if (mk.length !== vals.length) return E('#VALUE!');
+    let s = 0, n = 0; vals.forEach((v, k) => { if (mk[k] && typeof v === 'number') { s += v; n++; } });
+    return avg ? (n ? s / n : E('#DIV/0!')) : s;
+  }
+  function call(raw, a) {
+    const n = ALIAS[raw] || raw;
+    const nums = () => { const f = flat(a); for (const v of f) if (isE(v)) return v; return f.filter(v => typeof v === 'number'); };
+    switch (n) {
+      case 'SUM': { const v = nums(); return isE(v) ? v : v.reduce((s, x) => s + x, 0); }
+      case 'AVERAGE': { const v = nums(); return isE(v) ? v : v.length ? v.reduce((s, x) => s + x, 0) / v.length : E('#DIV/0!'); }
+      case 'COUNT': { const v = nums(); return isE(v) ? v : v.length; }
+      case 'COUNTA': return flat(a).filter(v => v !== null && v !== '').length;
+      case 'MIN': case 'MAX': { const v = nums(); return isE(v) ? v : v.length ? Math[n.toLowerCase()](...v) : 0; }
+      case 'ABS': { const v = num(a[0]); return isE(v) ? v : Math.abs(v); }
+      case 'ROUND': { const v = num(a[0]), d = num(a[1] == null ? 0 : a[1]); if (isE(v)) return v; if (isE(d)) return d; const f = Math.pow(10, d); return Math.round((v + Math.sign(v) * 1e-12) * f) / f; }
+      case 'IF': { const c = scalar(a[0]); if (isE(c)) return c; return truthy(c) ? (a[1] === undefined ? true : a[1]) : (a[2] === undefined ? false : a[2]); }
+      case 'IFERROR': return isE(scalar(a[0])) ? a[1] : a[0];
+      case 'AND': return flat(a).every(truthy);
+      case 'OR': return flat(a).some(truthy);
+      case 'COUNTIF': case 'COUNTIFS': { const mk = mask(a); return isE(mk) ? mk : mk.filter(Boolean).length; }
+      case 'SUMIF': return aggIfs(a[2] != null ? a[2] : a[0], [a[0], a[1]], false);
+      case 'SUMIFS': return aggIfs(a[0], a.slice(1), false);
+      case 'AVERAGEIF': return aggIfs(a[2] != null ? a[2] : a[0], [a[0], a[1]], true);
+      case 'AVERAGEIFS': return aggIfs(a[0], a.slice(1), true);
+      case 'XLOOKUP': {
+        const key = scalar(a[0]); if (isE(key)) return key;
+        const look = list(a[1]), ret = list(a[2]); if (look.length !== ret.length) return E('#VALUE!');
+        const k = look.findIndex(v => looseEq(v, key));
+        return k < 0 ? (a[3] != null ? a[3] : E('#N/A')) : ret[k];
+      }
+      case 'VLOOKUP': {
+        const key = scalar(a[0]); if (isE(key)) return key;
+        const tb = a[1] && a[1].range; if (!tb) return E('#VALUE!');
+        const col = num(a[2]); if (isE(col)) return col; if (col < 1 || col > tb[0].length) return E('#REF!');
+        const exact = a[3] != null && !truthy(a[3]); let k = -1;
+        if (exact) k = tb.findIndex(r => looseEq(r[0], key));
+        else for (let i = 0; i < tb.length; i++) { if (looseEq(tb[i][0], key)) { k = i; break; } if (cmpAny(tb[i][0], key) <= 0) k = i; else break; }
+        return k < 0 ? E('#N/A') : tb[k][col - 1];
+      }
+      case 'MATCH': {
+        const key = scalar(a[0]); if (isE(key)) return key;
+        const arr = list(a[1]), type = a[2] == null ? 1 : num(a[2]); if (isE(type)) return type;
+        let k = -1;
+        if (type === 0) k = arr.findIndex(v => looseEq(v, key));
+        else for (let i = 0; i < arr.length; i++) { if (cmpAny(arr[i], key) <= 0) k = i; else break; }
+        return k < 0 ? E('#N/A') : k + 1;
+      }
+      case 'INDEX': {
+        const tb = a[0] && a[0].range; if (!tb) return a[0];
+        const r = num(a[1] == null ? 1 : a[1]), c = num(a[2] == null ? 1 : a[2]); if (isE(r)) return r; if (isE(c)) return c;
+        let rr = r, cc = c; if (tb.length === 1 && a[2] == null) { rr = 1; cc = r; }
+        if (rr < 1 || rr > tb.length || cc < 1 || cc > tb[0].length) return E('#REF!');
+        return tb[rr - 1][cc - 1];
+      }
+      default: return E('#NAME? (' + raw + ')');
+    }
+  }
+  function evaluate(formula, grid) {
+    const src = String(formula || '').trim();
+    if (src[0] !== '=') return { error: 'A formula must start with =' };
+    let toks; try { toks = tokenize(src.slice(1)); } catch (e) { return { error: e.message }; }
+    let p = 0;
+    const isOp = v => toks[p] && toks[p].t === 'op' && toks[p].v === v;
+    const expect = v => { if (!isOp(v)) throw new Error('Expected "' + v + '"'); p++; };
+    const cell = (r, c) => { const row = grid[r], v = row ? row[c] : undefined; return v === undefined || v === '' ? null : v; };
+    const refVal = m => {
+      const c1 = colIdx(m[1]), r1 = +m[2] - 1; if (!m[3]) return cell(r1, c1);
+      const c2 = colIdx(m[3]), r2 = +m[4] - 1, rows = [];
+      for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) { const row = []; for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++) row.push(cell(r, c)); rows.push(row); }
+      return { range: rows };
+    };
+    function primary() {
+      const tk = toks[p++]; if (!tk) throw new Error('The formula ends too early');
+      if (tk.t === 'num' || tk.t === 'str') return tk.v;
+      if (tk.t === 'ref') return refVal(tk.v);
+      if (tk.t === 'name') { const n = ALIAS[tk.v] || tk.v; return n === 'TRUE' ? true : n === 'FALSE' ? false : E('#NAME? (' + tk.v + ')'); }
+      if (tk.t === 'fn') {
+        const args = [];
+        if (!isOp(')')) { for (;;) { args.push(isOp(',') || isOp(')') ? null : comparison()); if (isOp(',')) { p++; continue; } break; } }
+        expect(')'); return call(tk.v, args);
+      }
+      if (tk.t === 'op' && tk.v === '(') { const v = comparison(); expect(')'); return v; }
+      throw new Error('Unexpected "' + tk.v + '"');
+    }
+    function postfix() { let v = primary(); while (isOp('%')) { p++; v = arith(v, 100, '/'); } return v; }
+    function unary() { if (isOp('-')) { p++; return arith(0, unary(), '-'); } if (isOp('+')) { p++; return unary(); } return postfix(); }
+    function power() { let v = unary(); while (isOp('^')) { p++; v = arith(v, unary(), '^'); } return v; }
+    function term() { let v = power(); while (isOp('*') || isOp('/')) { const o = toks[p++].v; v = arith(v, power(), o); } return v; }
+    function additive() { let v = term(); while (isOp('+') || isOp('-')) { const o = toks[p++].v; v = arith(v, term(), o); } return v; }
+    function concat() { let v = additive(); while (isOp('&')) { p++; const a = scalar(v), b = scalar(additive()); v = isE(a) ? a : isE(b) ? b : str(a) + str(b); } return v; }
+    function comparison() {
+      let v = concat();
+      while (['=', '<>', '<', '>', '<=', '>='].some(o => isOp(o))) { const o = toks[p++].v, a = scalar(v), b = scalar(concat()); v = isE(a) ? a : isE(b) ? b : cmpOp(cmpAny(a === null ? 0 : a, b === null ? 0 : b), o); }
+      return v;
+    }
+    try {
+      const v = comparison();
+      if (p < toks.length) throw new Error('Unexpected "' + toks[p].v + '"');
+      if (v && v.range && !(v.range.length === 1 && v.range[0].length === 1)) return { error: 'The formula returns several cells; it must return one value' };
+      const s = scalar(v);
+      if (isE(s)) return { error: s.code };
+      return { value: typeof s === 'number' ? Number(s.toFixed(10)) : s === null ? 0 : s };
+    } catch (e) { return { error: e.message }; }
+  }
+  return { evaluate };
+})();
+/*EXCEL-END*/
+
+/* ------------------------------ camera ------------------------------ */
+async function enableCamera() {
+  S.camErr = '';
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('no-api'), { name: 'NoApi' });
+    if (S.cam) S.cam.getTracks().forEach(t => t.stop());
+    S.cam = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 480 }, height: { ideal: 360 }, facingMode: 'user' }, audio: false });
+    S.cam.getVideoTracks()[0].addEventListener('ended', onCamLost);
+    S.camOk = true; attachCam(); camState(true); return true;
+  } catch (e) {
+    S.camOk = false; camState(false);
+    S.camErr = e.name === 'NotAllowedError' ? 'Camera permission was blocked. Allow the camera for this page (lock icon in the address bar) and try again. If this page is embedded inside another site, open the assessment link directly in Chrome or Edge.'
+      : e.name === 'NotFoundError' ? 'No camera was found on this device.'
+      : e.name === 'NotReadableError' ? 'The camera is being used by another application. Close it and try again.'
+      : e.name === 'NoApi' ? 'This browser/page does not allow camera access. Use Chrome or Edge and open the assessment link directly.'
+      : 'Camera error: ' + (e.message || e.name);
+    return false;
+  }
+}
+function attachCam() { $$('video.mirror').forEach(v => { if (S.cam) { v.srcObject = S.cam; v.play().catch(() => {}); } }); }
+function camState(on) {
+  const t = $('#camTile'); if (!t) return;
+  t.classList.toggle('off', !on); $('#camSt').textContent = on ? 'Camera on' : 'Camera OFF — click to retry';
+}
+function onCamLost() { S.camOk = false; camState(false); if (S.inExam) { logEv('camera_lost', ''); toast('Your camera stopped. Click the camera box to turn it back on.'); } }
+$('#camTile').addEventListener('click', async () => {
+  if (S.camDragged) { S.camDragged = false; return; }          // a drag is not a click
+  if (!S.camOk && await enableCamera() && S.inExam) logEv('camera_back', '');
+});
+/* the camera box can be dragged anywhere (it stays visible) so it never covers a button */
+(function dragCam() {
+  const t = $('#camTile'); let sx = 0, sy = 0, ox = 0, oy = 0, down = false, moved = false;
+  t.title = 'Arrastra para mover / Drag to move';
+  t.addEventListener('pointerdown', e => { down = true; moved = false; sx = e.clientX; sy = e.clientY; const r = t.getBoundingClientRect(); ox = r.left; oy = r.top; try { t.setPointerCapture(e.pointerId); } catch (x) {} });
+  t.addEventListener('pointermove', e => {
+    if (!down) return; const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!moved && Math.abs(dx) + Math.abs(dy) < 6) return; moved = true;
+    t.style.left = Math.min(Math.max(0, ox + dx), window.innerWidth - t.offsetWidth) + 'px';
+    t.style.top = Math.min(Math.max(0, oy + dy), window.innerHeight - t.offsetHeight) + 'px';
+    t.style.right = 'auto'; t.style.bottom = 'auto';
+  });
+  const end = () => { if (down && moved) S.camDragged = true; down = false; };
+  t.addEventListener('pointerup', end); t.addEventListener('pointercancel', end);
+  window.addEventListener('resize', () => { if (t.style.left) { const r = t.getBoundingClientRect(); t.style.left = Math.min(r.left, window.innerWidth - t.offsetWidth) + 'px'; t.style.top = Math.min(r.top, window.innerHeight - t.offsetHeight) + 'px'; } });
+})();
+
+/* ------------------------------ integrity log ------------------------------ */
+function logEv(type, detail) { if (!S.token || S.role !== 'candidate') return; api.api_event(S.token, type, detail || '').catch(() => {}); }
+function bindIntegrity() {
+  if (bindIntegrity.done) return; bindIntegrity.done = true;
+  document.addEventListener('visibilitychange', () => { if (S.inExam && document.hidden) logEv('tab_hidden', 'page hidden'); else if (S.inExam) toast('Leaving the exam page is recorded.'); });
+  window.addEventListener('blur', () => { const n = Date.now(); if (S.inExam && n - S.lastBlur > 4000) { S.lastBlur = n; logEv('window_blur', ''); } });
+  document.addEventListener('paste', e => { if (S.inExam) logEv('paste', ((e.clipboardData && e.clipboardData.getData('text')) || '').length + ' chars'); });
+  document.addEventListener('copy', () => { if (S.inExam) logEv('copy', ''); });
+  window.addEventListener('beforeunload', e => { if (S.inExam && !S.submitted) { e.preventDefault(); e.returnValue = ''; } });
+}
+
+/* ------------------------------ auth & routing ------------------------------ */
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#loginBtn'), err = $('#loginErr'); err.classList.add('hidden'); btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const r = await api.api_login($('#lu').value, $('#lp').value);
+    Object.assign(S, { token: r.token, role: r.role, name: r.name, username: r.username });
+    store.set('gc_token', r.token); store.set('gc_role', r.role); store.set('gc_name', r.name);
+    $('#lp').value = ''; route();
+  } catch (ex) { err.textContent = ex.message; err.classList.remove('hidden'); }
+  finally { btn.disabled = false; btn.textContent = 'Sign in'; }
+});
+async function logout() {
+  if (S.inExam && !S.submitted) { toast('Finish the assessment before signing out.'); return; }
+  try { await api.api_logout(S.token); } catch (e) {}
+  if (S.cam) S.cam.getTracks().forEach(t => t.stop());
+  store.del('gc_token'); store.del('gc_role'); store.del('gc_name');
+  Object.assign(S, { token: null, role: null, cam: null, camOk: false, inExam: false });
+  show('v-login');
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-act="logout"]'); if (b) logout(); });
+function sessionLost() { store.del('gc_token'); S.token = null; S.inExam = false; show('v-login'); toast('Your session expired. Please sign in again.'); }
+function route() { S.role === 'admin' ? loadAdmin() : loadHome(); }
+(function boot() {
+  const t = store.get('gc_token');
+  if (t) { Object.assign(S, { token: t, role: store.get('gc_role'), name: store.get('gc_name') || '' }); route(); } else show('v-login');
+})();
+
+/* ------------------------------ candidate home ------------------------------ */
+async function loadHome() {
+  show('v-home'); $('#hHello').textContent = 'Welcome, ' + (S.name || '');
+  const body = $('#homeBody'); body.innerHTML = '<p class="muted"><span class="spin"></span> Loading…</p>';
+  let st;
+  try { st = await api.api_status(S.token); } catch (e) { return isSessionErr(e) ? sessionLost() : (body.innerHTML = '<div class="err">' + esc(e.message) + '</div>'); }
+  S.cameraRequired = st.cameraRequired;
+  if (st.state === 'submitted') { body.innerHTML = '<div class="note" style="margin-top:14px">✅ You have already completed this assessment. Human Resources will contact you.</div>'; return; }
+  const resume = st.state === 'in_progress';
+  body.innerHTML =
+    '<p class="muted" style="margin:6px 0 10px">' + esc(st.roleName || '') + ' · ' + st.durationMin + ' minutes · ' + st.questionCount + ' questions · in English</p>' +
+    (resume ? '<div class="note" style="margin-bottom:10px"><b>You already started.</b> The timer keeps running — press Resume to continue where you left off.</div>' : '') +
+    '<h3 style="margin-top:14px">What you will do</h3><ul>' + (st.modules || []).map(m => '<li>' + (MOD_INFO[m] || esc(m)) + '</li>').join('') + '</ul>' +
+    '<h3 style="margin-top:14px">Rules</h3><ul>' +
+    '<li>The countdown starts when you press <b>Start</b> and cannot be paused. When it reaches zero your answers are submitted automatically.</li>' +
+    '<li>Answers save automatically. You can run your code as many times as you like.</li>' +
+    '<li>Your <b>webcam must stay on</b> and is shown on screen while you work. The video is <b>not recorded or sent anywhere</b>.</li>' +
+    '<li>Leaving the page, pasting text or turning the camera off is <b>logged</b> and reported to HR. Do not use other people or AI tools. The data is fictitious.</li>' +
+    '<li>Use a laptop or desktop with Chrome or Edge and a stable internet connection.</li></ul>' +
+    '<h3 style="margin-top:14px">Camera check</h3>' +
+    '<div class="cam-check"><div class="cam-box" id="homeCam"><span>Camera is off</span></div>' +
+    '<div style="flex:1;min-width:220px"><button class="btn" id="camBtn">Turn on camera</button> <span id="camMsg" class="hint"></span>' +
+    '<div id="camErr" class="err hidden"></div>' +
+    '<div class="hint" style="margin-top:8px">' + (st.cameraRequired ? 'Required to start.' : 'Optional for this assessment.') + '</div></div></div>' +
+    '<div style="margin-top:20px;display:flex;gap:10px;align-items:center"><button class="btn primary" id="startBtn" style="padding:11px 22px" ' + (st.cameraRequired && !S.camOk ? 'disabled' : '') + '>' + (resume ? 'Resume' : 'Start assessment') + '</button><span id="startErr" class="hint"></span></div>';
+  const refreshCam = () => {
+    const box = $('#homeCam');
+    if (S.camOk && S.cam) { box.innerHTML = '<video class="mirror" autoplay muted playsinline></video>'; attachCam(); $('#camMsg').textContent = '✓ Camera working'; }
+    $('#camErr').classList.toggle('hidden', !S.camErr); $('#camErr').textContent = S.camErr;
+    $('#startBtn').disabled = st.cameraRequired && !S.camOk;
+  };
+  $('#camBtn').onclick = async () => { $('#camBtn').disabled = true; await enableCamera(); $('#camBtn').disabled = false; refreshCam(); };
+  $('#startBtn').onclick = startExam;
+  refreshCam();
+}
+
+/* ------------------------------ exam ------------------------------ */
+const isCode = q => q.type === 'sql' || q.type === 'py';
+/* question texts in the chosen language (Spanish is for understanding only; grading is language-independent) */
+const qt = q => (S.lang === 'es' && q.es)
+  ? { title: q.es.title, prompt: q.es.prompt, section: q.es.section, options: q.es.options || q.options }
+  : { title: q.title, prompt: q.prompt, section: q.section, options: q.options };
+function syncLangBtn() { const b = $('#langBtn'); if (b) b.textContent = S.lang === 'es' ? 'English' : 'Español'; }
+function setLang(l) { S.lang = l; try { localStorage.setItem('gc_lang', l); } catch (e) {} syncLangBtn(); if (S.inExam) { buildNav(); renderQ(); } }
+$('#langBtn').onclick = () => setLang(S.lang === 'es' ? 'en' : 'es');
+$('#finishBtn').onclick = () => finish(false);   // header Finish button (asks for confirmation and lists unanswered questions)
+syncLangBtn();
+
+/* built-in calculator: candidates can calculate without leaving the page (leaving it is logged as an incident) */
+function calcEval(src) {
+  let e = String(src || '').replace(/,/g, '').replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').trim();
+  if (!e) return null;
+  e = e.replace(/(\d+(?:\.\d+)?|\))\s*%/g, '($1/100)');
+  if (!/^[0-9+\-*/().\s]+$/.test(e)) return null;
+  try { const r = Function('"use strict";return (' + e + ')')(); return typeof r === 'number' && isFinite(r) ? Number(r.toFixed(8)) : null; } catch (err) { return null; }
+}
+(function initCalc() {
+  const inp = $('#calcIn'), res = $('#calcRes'), keys = $('#calcKeys');
+  const layout = ['7', '8', '9', '/', '4', '5', '6', '*', '1', '2', '3', '-', '0', '.', '(', ')', '+', '%', 'C', '⌫'];
+  keys.innerHTML = layout.map(k => '<button class="btn' + (/[\/*\-+%]/.test(k) ? ' op' : '') + '" data-k="' + k + '">' + ({ '/': '÷', '*': '×', '-': '−' }[k] || k) + '</button>').join('') + '<button class="btn primary" data-k="=" style="grid-column:1/-1">=</button>';
+  const upd = () => { const v = calcEval(inp.value); res.textContent = v === null ? (inp.value.trim() ? '…' : '0') : String(v); };
+  keys.onclick = e => {
+    const b = e.target.closest('[data-k]'); if (!b) return; const k = b.dataset.k;
+    if (k === 'C') inp.value = ''; else if (k === '⌫') inp.value = inp.value.slice(0, -1);
+    else if (k === '=') { const v = calcEval(inp.value); if (v !== null) inp.value = String(v); }
+    else inp.value += k;
+    upd(); inp.focus();
+  };
+  inp.oninput = upd;
+  inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); const v = calcEval(inp.value); if (v !== null) { inp.value = String(v); upd(); } } };
+  $('#calcBtn').onclick = () => { const c = $('#calc'); c.classList.toggle('hidden'); if (!c.classList.contains('hidden')) inp.focus(); };
+  $('#calcX').onclick = () => $('#calc').classList.add('hidden');
+  $('#calcUse').onclick = () => {
+    const q = S.q[S.i], v = calcEval(inp.value);
+    if (!q || q.type !== 'num') { toast(S.lang === 'es' ? 'Esta pregunta no pide un número.' : 'This question does not ask for a number.'); return; }
+    if (v === null) { toast(S.lang === 'es' ? 'Escribe una operación válida.' : 'Enter a valid calculation.'); return; }
+    const box = $('#numIn'); if (box) box.value = String(v); setAns(q, String(v)); toast(S.lang === 'es' ? 'Respuesta guardada: ' + v : 'Answer saved: ' + v);
+  };
+})();
+function ansOf(id) { return S.ans[id] || (S.ans[id] = { response: '', output: null, outFor: null }); }
+function isAnswered(q) {
+  const a = S.ans[q.id]; if (!a || a.response === '' || a.response == null) return false;
+  if (isCode(q)) { const r = String(a.response).trim(); return r !== '' && r !== String(q.starter || '').trim(); }
+  return String(a.response).trim() !== '';
+}
+
+async function startExam() {
+  const btn = $('#startBtn'); btn.disabled = true; $('#startErr').textContent = '';
+  try {
+    if (S.cameraRequired && !S.camOk) throw new Error('Turn on your camera first.');
+    const b = await api.api_start(S.token);
+    S.q = b.questions; S.seed = b.seedSql || ''; S.sheet = b.sheet || null; S.skew = b.serverNow - Date.now(); S.deadline = b.deadlineMs; S.cameraRequired = b.cameraRequired;
+    S.ans = {};
+    Object.keys(b.saved || {}).forEach(id => {
+      let out = null; try { out = b.saved[id].output ? JSON.parse(b.saved[id].output) : null; } catch (e) {}
+      S.ans[id] = { response: b.saved[id].response, output: out, outFor: out ? b.saved[id].response : null };
+    });
+    S.inExam = true; S.submitted = false; S.finishing = false;
+    const firstOpen = S.q.findIndex(q => !isAnswered(q)); S.i = Math.max(0, firstOpen);
+    show('v-exam'); attachCam(); camState(S.camOk); buildNav(); renderQ(); startTimer(); bindIntegrity();
+    // pre-load only the engines this candidate's test needs
+    if (S.q.some(q => q.type === 'sql')) sqlRunner.warm().catch(() => {});
+    if (S.q.some(q => q.type === 'py')) setTimeout(() => pyRunner.warm().catch(() => {}), 1500);
+  } catch (e) {
+    if (isSessionErr(e)) return sessionLost();
+    btn.disabled = false; $('#startErr').textContent = e.message; $('#startErr').style.color = 'var(--bad)';
+  }
+}
+
+function startTimer() {
+  clearInterval(S.timer);
+  const tick = () => {
+    const rem = (S.deadline - (Date.now() + S.skew)) / 1000, el = $('#timer');
+    el.textContent = fmtClock(rem); el.classList.toggle('warn', rem <= 600 && rem > 120); el.classList.toggle('bad', rem <= 120);
+    if (rem <= 0 && !S.finishing && !S.submitted) finish(true);
+  };
+  tick(); S.timer = setInterval(tick, 250);
+  [600, 120].forEach(sec => { const ms = (S.deadline - (Date.now() + S.skew)) - sec * 1000; if (ms > 0) setTimeout(() => S.inExam && !S.submitted && toast(sec / 60 + ' minutes left'), ms); });
+}
+
+function buildNav() {
+  let html = '', sec = '';
+  S.q.forEach((q, i) => {
+    const t = qt(q);
+    if (t.section !== sec) { sec = t.section; html += '<h4>' + esc(sec) + '</h4>'; }
+    html += '<button class="navbtn" data-i="' + i + '"><span class="dot"></span><span class="n">' + (i + 1) + '</span><span>' + esc(t.title) + '</span></button>';
+  });
+  const nav = $('#nav'); nav.innerHTML = html;
+  nav.onclick = e => { const b = e.target.closest('.navbtn'); if (b) { S.i = +b.dataset.i; renderQ(); } };
+  updateNav();
+}
+function updateNav() {
+  $$('.navbtn').forEach(b => { const i = +b.dataset.i; b.classList.toggle('cur', i === S.i); b.classList.toggle('done', isAnswered(S.q[i])); });
+}
+
+function schemaHtml() {
+  const tables = []; const re = /CREATE TABLE (\w+) \(([^;]+?)\);/g; let m;
+  while ((m = re.exec(S.seed))) tables.push([m[1], m[2].split(',').map(c => c.trim().split(/\s+/))]);
+  return '<details open><summary>Database schema (SQLite)</summary><div class="schema">' + tables.map(([n, cols]) =>
+    '<div class="tbl"><b>' + esc(n) + '</b><div class="cols">' + cols.map(c => '<span>' + esc(c[0]) + '<i>' + esc((c[1] || '').toLowerCase()) + '</i></span>').join('') + '</div></div>').join('') + '</div></details>';
+}
+
+function renderQ() {
+  const q = S.q[S.i], a = ansOf(q.id), main = $('#qmain'), t = qt(q), es = S.lang === 'es';
+  $('#barSec').textContent = t.section;
+  let h = '<div class="card"><div class="qhead"><span class="chip">' + (es ? 'Pregunta ' + (S.i + 1) + ' de ' : 'Question ' + (S.i + 1) + ' of ') + S.q.length + '</span><span class="chip">' + q.points + ' pts</span><span class="chip">' + esc(t.section) + '</span></div>' +
+    '<div class="qtitle">' + esc(t.title) + '</div><div class="prompt">' + fmt(t.prompt) + '</div>';
+  if ('speechSynthesis' in window) speechSynthesis.cancel();   // stop any audio when changing question
+  if (q.type === 'mcq') {
+    if (q.audio) h += '<div class="audio"><button class="btn primary" id="playBtn">▶ Play audio</button><span class="hint" id="playLeft"></span></div>';
+    h += '<div role="radiogroup">' + t.options.map((o, k) =>
+      '<label class="opt' + (String(a.response) === String(k) ? ' sel' : '') + '" style="margin:8px 0;font-weight:400;font-size:15px"><input type="radio" name="mcq" value="' + k + '"' + (String(a.response) === String(k) ? ' checked' : '') + '><span class="l">' + String.fromCharCode(65 + k) + '</span><code>' + esc(o) + '</code></label>').join('') + '</div>';
+  } else if (q.type === 'num') {
+    h += '<label for="numIn">Your answer</label><input id="numIn" type="text" inputmode="decimal" style="max-width:240px" value="' + esc(a.response) + '" autocomplete="off"><div class="hint" style="margin-top:6px">' + (es ? 'Usa la calculadora 🧮 de la barra superior (no abras la del sistema: salir de la página queda registrado).' : 'Use the 🧮 Calculator in the top bar (do not open the system one: leaving the page is logged).') + '</div>';
+  } else if (q.type === 'xl') {
+    h += sheetHtml() + '<label for="xlIn">' + (es ? 'Tu fórmula' : 'Your formula') + '</label><div class="runbar" style="margin-top:0">' +
+      '<input id="xlIn" class="xlf" type="text" spellcheck="false" autocomplete="off" placeholder="=SUM(F2:F21)" value="' + esc(a.response) + '">' +
+      '<button class="btn primary" id="xlBtn">Calculate</button></div><div id="result"></div>';
+  } else if (q.type === 'text') {
+    h += '<label for="essay">Your recommendation</label><textarea id="essay" class="essay" spellcheck="true" placeholder="Write in English…">' + esc(a.response) + '</textarea><div class="hint" id="wc"></div>';
+  } else {
+    if (q.type === 'sql') h += schemaHtml();
+    h += '<label for="code">' + (q.type === 'sql' ? 'SQL editor (SQLite dialect)' : 'Python editor (Python 3)') + '</label>' +
+      '<textarea id="code" class="code" spellcheck="false" autocapitalize="off" autocomplete="off" rows="12">' + esc(a.response === '' ? (q.starter || '') : a.response) + '</textarea>' +
+      '<div class="runbar"><button class="btn primary" id="runBtn">▶ ' + (q.type === 'sql' ? 'Run query' : 'Run my code') + '</button><button class="btn sm" id="resetCode">Reset</button>' +
+      '<span class="hint">Ctrl/⌘ + Enter to run · Tab indents' + (q.type === 'py' ? ' · your function is called with test inputs' : '') + '</span></div><div id="result"></div>';
+  }
+  h += '</div><div class="footnav"><button class="btn" id="prevBtn" ' + (S.i === 0 ? 'disabled' : '') + '>← Previous</button>' +
+    (S.i === S.q.length - 1 ? '<button class="btn primary" id="lastFinish">Review &amp; finish</button>' : '<button class="btn primary" id="nextBtn">Next →</button>') + '</div>';
+  main.innerHTML = h; updateNav();
+  $('#prevBtn').onclick = () => { S.i--; renderQ(); }; const nb = $('#nextBtn'); if (nb) nb.onclick = () => { S.i++; renderQ(); };
+  const lf = $('#lastFinish'); if (lf) lf.onclick = () => finish(false);
+
+  if (q.type === 'mcq') $$('input[name=mcq]', main).forEach(r => r.onchange = () => { setAns(q, r.value); $$('.opt', main).forEach(o => o.classList.toggle('sel', $('input', o).checked)); });
+  if (q.type === 'num') $('#numIn').oninput = e => setAns(q, e.target.value);
+  if (q.type === 'text') { const t = $('#essay'), wc = $('#wc'); const upd = () => { const n = t.value.trim().split(/\s+/).filter(Boolean).length; wc.textContent = n + ' words' + (q.minWords && n < q.minWords ? ' (aim for at least ' + q.minWords + ')' : ''); }; t.oninput = () => { setAns(q, t.value); upd(); }; upd(); }
+  if (q.type === 'xl') {
+    const f = $('#xlIn');
+    const calc = () => { const a2 = ansOf(q.id); a2.output = XL.evaluate(f.value, S.sheet || []); a2.outFor = f.value; renderResult(q); };
+    f.oninput = () => { setAns(q, f.value); calc(); };
+    f.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); calc(); S.dirty.add(q.id); scheduleSave(); } };
+    $('#xlBtn').onclick = () => { calc(); S.dirty.add(q.id); scheduleSave(); };
+    renderResult(q);
+  }
+  if (q.audio) bindAudio(q);
+  if (isCode(q)) {
+    const ed = $('#code'); if (a.response === '' && q.starter) { a.response = q.starter; }
+    ed.addEventListener('input', () => setAns(q, ed.value));
+    ed.addEventListener('keydown', e => {
+      if (e.key === 'Tab') { e.preventDefault(); const s = ed.selectionStart, ind = q.type === 'py' ? '    ' : '  '; ed.setRangeText(ind, s, ed.selectionEnd, 'end'); setAns(q, ed.value); }
+      else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runCode(q); }
+    });
+    $('#runBtn').onclick = () => runCode(q);
+    $('#resetCode').onclick = async () => { if (await confirmBox('Reset code?', 'Your code for this question will go back to the starting template.', 'Reset', 'danger')) { ed.value = q.starter || ''; setAns(q, ed.value); } };
+    renderResult(q);
+  }
+}
+
+function setAns(q, v) { const a = ansOf(q.id); a.response = v; S.dirty.add(q.id); scheduleSave(); updateNav(); }
+
+/* Excel sheet shown for formula questions (row 1 = headers, columns A..I) */
+function sheetHtml() {
+  const g = S.sheet || [], cols = (g[0] || []).length;
+  let h = '<div class="sheet"><table><thead><tr><th></th>' + Array.from({ length: cols }, (_, c) => '<th>' + String.fromCharCode(65 + c) + '</th>').join('') + '</tr></thead><tbody>';
+  g.forEach((r, i) => { h += '<tr><th>' + (i + 1) + '</th>' + r.map(v => '<td class="' + (i === 0 && v !== '' ? 'hd' : typeof v === 'number' ? 'num' : '') + '">' + esc(v) + '</td>').join('') + '</tr>'; });
+  return h + '</tbody></table></div>';
+}
+
+/* Listening: the browser reads the audio script aloud (max 2 plays per audio; each play is logged) */
+const MAX_PLAYS = 2;
+const playsKey = () => 'gc_plays_' + (S.username || S.name || '');
+function getPlays() { try { return JSON.parse(localStorage.getItem(playsKey()) || '{}'); } catch (e) { return {}; } }
+function bindAudio(q) {
+  const btn = $('#playBtn'), left = $('#playLeft'); if (!btn) return;
+  const upd = u => { const rem = MAX_PLAYS - u; left.textContent = rem > 0 ? rem + ' play(s) left' : 'No plays left'; btn.disabled = rem <= 0; };
+  if (!('speechSynthesis' in window)) { btn.disabled = true; left.textContent = 'Audio is not supported in this browser. Use Chrome or Edge.'; return; }
+  upd(getPlays()[q.audioKey] || 0);
+  btn.onclick = () => {
+    const p = getPlays(), u = p[q.audioKey] || 0; if (u >= MAX_PLAYS) return;
+    p[q.audioKey] = u + 1; try { localStorage.setItem(playsKey(), JSON.stringify(p)); } catch (e) {}
+    logEv('audio_play', q.audioKey + ' #' + (u + 1));
+    speechSynthesis.cancel();
+    const ut = new SpeechSynthesisUtterance(q.audio); ut.lang = 'en-US'; ut.rate = 0.92;
+    const vs = speechSynthesis.getVoices(); ut.voice = vs.find(x => /^en[-_]US/i.test(x.lang)) || vs.find(x => /^en/i.test(x.lang)) || null;
+    btn.disabled = true; btn.textContent = '🔊 Playing…'; left.textContent = '';
+    ut.onend = ut.onerror = () => { btn.textContent = '▶ Play audio'; upd(getPlays()[q.audioKey] || 0); };
+    speechSynthesis.speak(ut);
+  };
+}
+
+/* what each module means, for the candidate's welcome page */
+const MOD_INFO = {
+  sql: '<b>SQL</b> — clean messy booking data, join tables and build a view, in a <b>live SQL editor</b>.',
+  python: '<b>Python</b> — small data-cleaning functions in a <b>live Python editor</b>.',
+  powerquery: '<b>Power Query (M)</b> — data transformation questions.',
+  dax: '<b>DAX</b> — measures and filter context.',
+  pricing: '<b>Pricing &amp; revenue</b> calculations (built-in calculator).',
+  case: 'A short <b>business case</b>, written in English.',
+  excel: '<b>Excel</b> — write formulas on a small sheet; they are calculated instantly.',
+  english: '<b>English</b> — listening (audio: use <b>speakers or headphones</b>), reading and grammar.'
+};
+
+/* result rendering */
+function cell(v) {
+  if (v === null || v === undefined) return '<td class="null">NULL</td>';
+  if (typeof v === 'number') return '<td class="num">' + (Number.isInteger(v) ? v : +v.toFixed(4)) + '</td>';
+  return '<td>' + esc(v) + '</td>';
+}
+function renderResult(q) {
+  const box = $('#result'); if (!box) return; const o = ansOf(q.id).output;
+  if (q.type === 'xl') {
+    box.innerHTML = !o ? '<div class="hint">Type a formula and press Calculate.</div>'
+      : o.error ? '<div class="err">' + esc(o.error) + '</div>'
+      : '<div class="result"><div class="rh"><span>Result</span><b style="font-size:16px">' + esc(typeof o.value === 'number' ? o.value.toLocaleString('en-US', { maximumFractionDigits: 6 }) : o.value) + '</b></div></div>';
+    return;
+  }
+  if (!o) { box.innerHTML = '<div class="hint">No result yet. Run your code to see the output here.</div>'; return; }
+  if (o.error) { box.innerHTML = '<div class="err" style="white-space:pre-wrap">' + esc(o.error) + '</div>'; return; }
+  if (q.type === 'sql') {
+    const rows = o.rows || [], shown = rows.slice(0, 100);
+    box.innerHTML = '<div class="result"><div class="rh"><span><b>' + (o.total ?? rows.length) + '</b> row(s) · ' + (o.columns || []).length + ' column(s)</span><span class="hint">' + (rows.length > 100 ? 'showing first 100' : '') + '</span></div><div class="rwrap"><table class="grid"><thead><tr>' +
+      (o.columns || []).map(c => '<th>' + esc(c) + '</th>').join('') + '</tr></thead><tbody>' + shown.map(r => '<tr>' + r.map(cell).join('') + '</tr>').join('') + '</tbody></table></div></div>' +
+      ((o.columns || []).length === 0 ? '<div class="hint" style="margin-top:6px">The statement ran but returned no result set. End your code with a SELECT' + (q.view ? ' (the view is checked automatically)' : '') + '.</div>' : '');
+  } else {
+    box.innerHTML = '<div class="result"><div class="rh"><span><b>Test runs</b> with sample inputs</span></div><div class="rwrap"><table class="grid"><thead><tr><th>#</th><th>Input</th><th>Your output</th></tr></thead><tbody>' +
+      (o.results || []).map((r, i) => '<tr><td>' + (i + 1) + '</td><td class="wrap">' + esc(JSON.stringify(q.tests[i]).slice(1, -1)) + '</td><td class="wrap" style="' + (r.ok ? '' : 'color:var(--bad)') + '">' + esc(r.ok ? JSON.stringify(r.value) : r.error) + '</td></tr>').join('') + '</tbody></table></div></div>' +
+      (o.stdout ? '<pre class="block">' + esc(o.stdout) + '</pre>' : '');
+  }
+}
+
+async function runCode(q) {
+  const a = ansOf(q.id), btn = $('#runBtn'); const code = a.response;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Running…'; }
+  const first = (q.type === 'sql' ? sqlRunner : pyRunner).inited == null;
+  if (first && $('#result')) $('#result').innerHTML = '<div class="hint"><span class="spin"></span> Loading the ' + (q.type === 'sql' ? 'SQL' : 'Python') + ' engine (first time only' + (q.type === 'py' ? ', ~10 MB' : '') + ')…</div>';
+  a.output = await execOne(q, code); a.outFor = code;
+  S.dirty.add(q.id); scheduleSave();
+  if (S.q[S.i] === q) { renderResult(q); const b2 = $('#runBtn'); if (b2) { b2.disabled = false; b2.innerHTML = '▶ ' + (q.type === 'sql' ? 'Run query' : 'Run my code'); } }
+}
+async function execOne(q, code, timeout) {
+  try {
+    if (q.type === 'sql') {
+      const r = await sqlRunner.run({ seed: S.seed, code, view: q.view || null, limit: 1000 }, timeout || 10000);
+      return { columns: r.columns, cols: r.columns.length, rows: r.rows, total: r.total };
+    }
+    const r = await pyRunner.run({ code, fn: q.fn, tests: q.tests }, timeout || 10000);
+    return { results: r.results, stdout: r.stdout };
+  } catch (e) { return { error: e.message }; }
+}
+
+/* ------------------------------ autosave ------------------------------ */
+function setSaveText(t, bad) { const e = $('#saveSt'); if (e) { e.textContent = t; e.style.color = bad ? 'var(--bad)' : ''; } }
+function scheduleSave() { setSaveText('Unsaved changes…'); clearTimeout(S.saveTimer); S.saveTimer = setTimeout(flush, 1200); }
+function flush() {
+  clearTimeout(S.saveTimer);
+  S.saveChain = S.saveChain.then(async () => {
+    const ids = Array.from(S.dirty); S.dirty.clear(); if (!ids.length) return;
+    setSaveText('Saving…');
+    for (const id of ids) {
+      const a = ansOf(id);
+      try { await api.api_save(S.token, id, a.response == null ? '' : String(a.response), a.output ? JSON.stringify(a.output) : ''); }
+      catch (e) {
+        if (/ATTEMPT_CLOSED|TIME_OVER/.test(e.message)) { S.dirty.clear(); if (!S.submitted) forceDone(); return; }
+        if (isSessionErr(e)) { sessionLost(); return; }
+        S.dirty.add(id); setSaveText('Save failed — retrying', true); setTimeout(flush, 4000); return;
+      }
+    }
+    setSaveText('All changes saved ✓');
+  });
+  return S.saveChain;
+}
+function forceDone() { S.submitted = true; S.inExam = false; clearInterval(S.timer); finishCleanup(); show('v-done'); }
+
+/* ------------------------------ finish ------------------------------ */
+async function finish(auto) {
+  if (S.finishing || S.submitted) return;
+  if (!auto) {
+    const open = S.q.filter(q => !isAnswered(q));
+    const ok = await confirmBox('Finish the assessment?',
+      '<p style="margin:0 0 8px">You answered <b>' + (S.q.length - open.length) + ' of ' + S.q.length + '</b> questions.</p>' +
+      (open.length ? '<p style="margin:0 0 8px" class="muted">Not answered yet: ' + open.map(q => esc(qt(q).title)).join(', ') + '.</p>' : '') +
+      '<p style="margin:0">After you submit you cannot change anything.</p>', 'Submit assessment');
+    if (!ok) return;
+  }
+  S.finishing = true;
+  const bo = busyOverlay(auto ? 'Time is up — submitting your answers…' : 'Checking your code one last time…');
+  try {
+    // re-run every code answer whose output is stale, so grading reflects the FINAL code
+    const stale = S.q.filter(q => isCode(q) && isAnswered(q) && ansOf(q.id).outFor !== ansOf(q.id).response);
+    const t0 = Date.now();
+    for (const q of stale) {
+      if (auto && Date.now() - t0 > 9000) break;      // after the deadline the server only accepts saves for a few seconds
+      bo.set('Running ' + q.title + '…');
+      const a = ansOf(q.id); a.output = await execOne(q, a.response, auto ? 4000 : 10000); a.outFor = a.response; S.dirty.add(q.id);
+    }
+    bo.set('Submitting…'); await flush();
+    await api.api_submit(S.token);
+    S.submitted = true; S.inExam = false; clearInterval(S.timer); finishCleanup(); bo.close(); show('v-done');
+  } catch (e) {
+    bo.close(); S.finishing = false;
+    if (isSessionErr(e)) return sessionLost();
+    const retry = await modal('<h3>Could not submit</h3><p>' + esc(e.message) + '</p><p class="muted">Your answers are saved. Check your connection and try again.</p>', [{ label: 'Try again', value: true, kind: 'primary' }]);
+    if (retry) finish(true);
+  }
+}
+function finishCleanup() { if (S.cam) S.cam.getTracks().forEach(t => t.stop()); S.camOk = false; sqlRunner.kill(); pyRunner.kill(); }
+
+/* ====================================================================
+ *  ADMIN
+ * ==================================================================== */
+let ADM = { tab: 'cands', list: [], cfg: null };
+async function loadAdmin() {
+  show('v-admin'); $('#admName').textContent = S.name;
+  $('#admTabs').onclick = e => { const b = e.target.closest('.tab'); if (b) { ADM.tab = b.dataset.tab; renderAdmin(); } };
+  renderAdmin();
+}
+async function renderAdmin() {
+  $$('#admTabs .tab').forEach(t => t.classList.toggle('on', t.dataset.tab === ADM.tab));
+  const body = $('#admBody'); body.innerHTML = '<p class="muted"><span class="spin"></span> Loading…</p>';
+  try {
+    if (ADM.tab === 'cands') await renderCands(body);
+    else if (ADM.tab === 'new') await renderNew(body);
+    else await renderSettings(body);
+  } catch (e) { if (isSessionErr(e)) return sessionLost(); body.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+}
+const STATUS = { not_started: ['Invited', ''], in_progress: ['In progress', 'warn'], submitted: ['Submitted', 'ok'], timeout: ['Timed out', 'warn'] };
+const RATING = { 'Recommended': 'ok', 'Review': 'warn', 'Not recommended': 'bad' };
+async function renderCands(body) {
+  ADM.list = await api.api_adminList(S.token);
+  body.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="muted">' + ADM.list.length + ' candidate(s)</div><button class="btn sm" id="refresh">↻ Refresh</button></div>' +
+    '<div class="tbl-wrap"><table class="list"><thead><tr><th>Candidate</th><th>Test</th><th>Status</th><th>Score</th><th>Rating</th><th>Submitted</th><th>HR mail</th><th></th></tr></thead><tbody>' +
+    (ADM.list.length ? ADM.list.map(c => {
+      const st = STATUS[c.status] || [c.status, '']; return '<tr><td><b>' + esc(c.name) + '</b><div class="hint">' + esc(c.email) + ' · ' + esc(c.username) + '</div></td>' +
+        '<td class="hint">' + esc(c.testName || '') + '</td>' +
+        '<td><span class="chip ' + st[1] + '">' + st[0] + '</span></td><td>' + (c.pct != null ? '<b>' + c.pct + '%</b>' : '—') + '</td>' +
+        '<td>' + (c.rating ? '<span class="chip ' + (RATING[c.rating] || '') + '">' + esc(c.rating) + '</span>' : '—') + '</td><td>' + fmtDate(c.submittedMs) + '</td>' +
+        '<td class="hint">' + esc(String(c.mailed || '—').split(' ')[0]) + '</td>' +
+        '<td><button class="btn sm" data-view="' + esc(c.username) + '">Open</button></td></tr>';
+    }).join('') : '<tr><td colspan="8" class="muted" style="padding:24px;text-align:center">No candidates yet. Create one in the “New candidate” tab.</td></tr>') + '</tbody></table></div>';
+  $('#refresh').onclick = renderAdmin;
+  $$('[data-view]', body).forEach(b => b.onclick = () => openDetail(b.dataset.view));
+}
+async function renderNew(body) {
+  const roles = await api.api_adminRoles(S.token);
+  const MOD = { sql: 'SQL', python: 'Python', powerquery: 'Power Query', dax: 'DAX', pricing: 'Pricing', case: 'Case', excel: 'Excel', english: 'English' };
+  body.innerHTML = '<div class="card" style="max-width:520px"><h3>Invite a candidate</h3><p class="muted" style="margin:4px 0 0">One attempt per candidate. Only an admin can reset it.</p>' +
+    '<label for="nn">Full name</label><input id="nn" type="text"><label for="ne">Email</label><input id="ne" type="email">' +
+    '<label for="nr">Test (role)</label><select id="nr">' + roles.map(r => '<option value="' + esc(r.key) + '">' + esc(r.name) + ' — ' + r.durationMin + ' min</option>').join('') + '</select>' +
+    '<div class="hint" id="nrInfo" style="margin-top:6px"></div>' +
+    '<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:14px"><input type="checkbox" id="ns" checked style="width:auto"> Email the credentials to the candidate</label>' +
+    '<div id="nerr" class="err hidden"></div><button class="btn primary" id="nbtn" style="margin-top:16px">Create candidate</button></div>';
+  const info = () => { const r = roles.find(x => x.key === $('#nr').value); $('#nrInfo').textContent = r ? r.modules.map(m => MOD[m] || m).join(' · ') + ' · ' + r.questions + ' questions' : ''; };
+  $('#nr').onchange = info; info();
+  $('#nbtn').onclick = async () => {
+    const btn = $('#nbtn'), err = $('#nerr'); err.classList.add('hidden'); btn.disabled = true;
+    try {
+      const r = await api.api_adminCreate(S.token, $('#nn').value, $('#ne').value, $('#ns').checked, $('#nr').value);
+      await modal('<h3>Candidate created</h3><p class="muted">Save these credentials now — the password cannot be shown again.</p><div class="cred">URL: ' + esc(r.url || '(deploy the web app to get the URL)') + '<br>Username: <b>' + esc(r.username) + '</b><br>Password: <b>' + esc(r.password) + '</b></div><p>' + (r.emailed ? '✅ The credentials were emailed to the candidate.' : 'ℹ️ No email was sent — share the credentials yourself.') + '</p>', [{ label: 'Done', value: true, kind: 'primary' }]);
+      ADM.tab = 'cands'; renderAdmin();
+    } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); btn.disabled = false; }
+  };
+}
+async function renderSettings(body) {
+  const c = await api.api_adminConfig(S.token);
+  body.innerHTML = '<div class="card" style="max-width:520px"><h3>Settings</h3>' +
+    '<label for="sh">HR email (receives every result)</label><input id="sh" type="email" value="' + esc(c.hrEmail) + '">' +
+    '<label for="su">Assessment URL (sent to candidates)</label><input id="su" type="text" value="' + esc(c.appUrl || '') + '">' +
+    '<p class="hint" style="margin:6px 0 0">Durations are set per role.</p>' +
+    '<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:14px"><input type="checkbox" id="sc" style="width:auto" ' + (c.cameraRequired ? 'checked' : '') + '> Webcam required to start</label>' +
+    '<p class="hint">Changes apply to attempts that start from now on.</p><div id="serr" class="err hidden"></div><button class="btn primary" id="sbtn" style="margin-top:8px">Save settings</button></div>';
+  $('#sbtn').onclick = async () => {
+    const err = $('#serr'); err.classList.add('hidden');
+    try { await api.api_adminConfig(S.token, { hrEmail: $('#sh').value, appUrl: $('#su').value.trim(), cameraRequired: $('#sc').checked }); toast('Settings saved'); }
+    catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+  };
+}
+async function openDetail(username) {
+  const body = $('#admBody'); body.innerHTML = '<p class="muted"><span class="spin"></span> Loading…</p>';
+  try {
+    const d = await api.api_adminDetail(S.token, username), at = d.attempt, det = d.detail;
+    let h = '<button class="btn sm" id="back">← Back</button><div class="card" style="margin-top:12px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h2>' + esc(d.user.name) + '</h2><div class="muted">' + esc(d.user.email) + ' · ' + esc(d.user.username) + '</div></div><div class="kv" style="align-self:start">' +
+      '<button class="btn sm" id="regrade">Regrade</button><button class="btn sm" id="resend">Resend to HR</button><button class="btn sm danger" id="reset">Reset attempt</button></div></div>';
+    if (!at) h += '<p class="muted">Has not started.</p>';
+    else {
+      h += '<p style="margin:12px 0 4px">Started ' + fmtDate(at.startedMs) + ' · Submitted ' + fmtDate(at.submittedMs) + ' · Status <span class="chip ' + ((STATUS[at.status] || [])[1] || '') + '">' + esc((STATUS[at.status] || [at.status])[0]) + '</span></p>';
+      if (det && det.roleName) h += '<p class="muted" style="margin:0 0 4px">Test: ' + esc(det.roleName) + '</p>';
+      if (at.pct != null) h += '<p style="font-size:26px;margin:6px 0"><b>' + at.pct + '%</b> <span class="hint" style="font-size:14px">(' + at.total + (det && det.max ? ' / ' + det.max : '') + ' pts)</span> <span class="chip ' + (RATING[at.rating] || '') + '" style="font-size:14px">' + esc(at.rating) + '</span></p>';
+      if (det && det.levels && Object.keys(det.levels).length) h += '<div class="kv">' + Object.keys(det.levels).map(k => '<span class="chip ok">' + esc(k) + ': ' + esc(det.levels[k]) + '</span>').join('') + '</div>';
+    }
+    h += '</div>';
+    if (det) {
+      h += '<div class="card" style="margin-top:14px"><h3>Sections</h3><div class="bars">' + Object.keys(det.sections).map(k => { const s = det.sections[k], p = s.max ? s.score / s.max * 100 : 0;
+        return '<div class="bar-row"><span>' + esc(k) + '</span><div class="track"><div class="fill" style="width:' + p + '%"></div></div><b>' + s.score + ' / ' + s.max + '</b></div>'; }).join('') + '</div></div>';
+      const ev = det.events || {}; const evs = Object.keys(ev).filter(k => !/^(start|submit|timeout_submit)$/.test(k));
+      h += '<div class="card" style="margin-top:14px"><h3>Integrity log</h3><div class="kv" style="margin-top:8px">' + (evs.length ? evs.map(k => '<span class="chip ' + (/camera_lost|tab_hidden/.test(k) ? 'warn' : '') + '">' + esc(k) + ': ' + ev[k] + '</span>').join('') : '<span class="chip ok">No incidents logged</span>') + '</div></div>';
+      h += '<div class="card" style="margin-top:14px"><h3>Questions</h3><div class="tbl-wrap" style="margin-top:8px;border:0"><table class="list"><thead><tr><th>#</th><th>Question</th><th>Score</th><th>Result</th><th></th></tr></thead><tbody>' +
+        det.items.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it.title) + '<div class="hint">' + esc(it.section) + '</div></td><td><b>' + it.score + '</b> / ' + it.points + '</td><td style="white-space:normal;max-width:360px"><span class="chip ' + ({ correct: 'ok', partial: 'warn', wrong: 'bad' }[it.status] || '') + '">' + esc(it.status) + '</span> <span class="hint">' + esc(it.note) + '</span></td><td>' +
+          (d.answers[it.id] && d.answers[it.id].response ? '<button class="btn sm" data-ans="' + esc(it.id) + '">Answer</button>' : '') + '</td></tr>').join('') + '</tbody></table></div></div>';
+    }
+    if (d.events.length) h += '<details class="card" style="margin-top:14px"><summary>Event timeline (' + d.events.length + ')</summary><div class="hint" style="margin-top:6px;line-height:1.8">' + d.events.map(e => esc(fmtDate(e.ts)) + ' — <b>' + esc(e.type) + '</b> ' + esc(e.detail)).join('<br>') + '</div></details>';
+    body.innerHTML = h;
+    $('#back').onclick = renderAdmin;
+    $$('[data-ans]', body).forEach(b => b.onclick = () => { const id = b.dataset.ans, q = d.detail.items.find(x => x.id === id); modal('<h3>' + esc(q.title) + '</h3><pre class="block" style="white-space:pre-wrap;max-height:50vh">' + esc(d.answers[id].response) + '</pre>', [{ label: 'Close', value: true, kind: 'primary' }]); });
+    $('#regrade').onclick = async () => { try { const r = await api.api_adminRegrade(S.token, username); toast('Regraded: ' + r.total + ' / 100'); openDetail(username); } catch (e) { toast(e.message); } };
+    $('#resend').onclick = async () => { try { const r = await api.api_adminResend(S.token, username); toast(r.result); } catch (e) { toast(e.message); } };
+    $('#reset').onclick = async () => { if (await confirmBox('Reset this attempt?', 'All saved answers of <b>' + esc(d.user.name) + '</b> are deleted and they can start again. This cannot be undone.', 'Reset attempt', 'danger')) { try { await api.api_adminReset(S.token, username); toast('Attempt reset'); renderAdmin(); } catch (e) { toast(e.message); } } };
+  } catch (e) { if (isSessionErr(e)) return sessionLost(); body.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+}
+</script>
+</body>
+</html>
