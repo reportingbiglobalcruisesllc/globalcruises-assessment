@@ -129,6 +129,19 @@ table.grid td.wrap{white-space:pre-wrap;word-break:break-word;font-family:ui-mon
 input.xlf{font:15px ui-monospace,Consolas,monospace;flex:1;min-width:240px;width:auto}
 .audio{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border:1px dashed var(--line);border-radius:10px}
 
+/* ---------- role play chat ---------- */
+.chat{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:10px;max-height:380px;overflow:auto;margin:10px 0}
+.bub{max-width:80%;padding:8px 12px;border-radius:12px;margin:6px 0;white-space:pre-wrap;line-height:1.45}
+.bub.other{background:var(--soft)} .bub.me{margin-left:auto;background:var(--brand);color:var(--brand-ink)}
+/* ---------- logo ---------- */
+.logo.img{width:auto;height:40px;background:none;border-radius:0} .logo.img img{height:100%;width:auto;display:block}
+/* ---------- admin: module picker & review ---------- */
+.picker{display:grid;gap:6px;margin-top:6px}
+.pk{display:grid;grid-template-columns:22px 1fr 230px;gap:8px;align-items:center;font-weight:400;margin:0;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
+.pk input{width:auto} .pk select{padding:5px 8px}
+@media (max-width:600px){.pk{grid-template-columns:22px 1fr}.pk select{grid-column:2}}
+.review{background:var(--soft);border-radius:10px;padding:10px 12px;margin:6px 0}
+
 /* ---------- built-in calculator ---------- */
 .calc{position:fixed;right:14px;bottom:186px;width:236px;z-index:31;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.3);padding:10px}
 .calc .ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
@@ -652,6 +665,14 @@ async function logout() {
 document.addEventListener('click', e => { const b = e.target.closest('[data-act="logout"]'); if (b) logout(); });
 function sessionLost() { store.del('gc_token'); S.token = null; S.inExam = false; show('v-login'); toast('Your session expired. Please sign in again.'); }
 function route() { S.role === 'admin' ? loadAdmin() : loadHome(); }
+/* company logo (uploaded by the admin in Settings); cached locally so it appears instantly */
+function applyBranding(logo) {
+  $$('.logo').forEach(el => { el.classList.toggle('img', !!logo); el.innerHTML = logo ? '<img src="' + esc(logo) + '" alt="Global Cruises">' : '⚓'; });
+}
+(function loadBranding() {
+  try { const c = localStorage.getItem('gc_logo'); if (c) applyBranding(c); } catch (e) {}
+  api.api_branding().then(b => { applyBranding(b.logo || ''); try { b.logo ? localStorage.setItem('gc_logo', b.logo) : localStorage.removeItem('gc_logo'); } catch (e) {} }).catch(() => {});
+})();
 (function boot() {
   const t = store.get('gc_token');
   if (t) { Object.assign(S, { token: t, role: store.get('gc_role'), name: store.get('gc_name') || '' }); route(); } else show('v-login');
@@ -665,11 +686,12 @@ async function loadHome() {
   try { st = await api.api_status(S.token); } catch (e) { return isSessionErr(e) ? sessionLost() : (body.innerHTML = '<div class="err">' + esc(e.message) + '</div>'); }
   S.cameraRequired = st.cameraRequired;
   if (st.state === 'submitted') { body.innerHTML = '<div class="note" style="margin-top:14px">✅ You have already completed this assessment. Human Resources will contact you.</div>'; return; }
+  if (!st.questionCount) { body.innerHTML = '<div class="note" style="margin-top:14px">No test has been assigned to you yet. Please contact Human Resources.</div>'; return; }
   const resume = st.state === 'in_progress';
   body.innerHTML =
-    '<p class="muted" style="margin:6px 0 10px">' + esc(st.roleName || '') + ' · ' + st.durationMin + ' minutes · ' + st.questionCount + ' questions · in English</p>' +
+    '<p class="muted" style="margin:6px 0 10px">' + st.durationMin + ' minutes · ' + st.questionCount + ' questions' + (st.attemptNo > 1 ? ' · <b>attempt ' + st.attemptNo + '</b>' : '') + '</p>' +
     (resume ? '<div class="note" style="margin-bottom:10px"><b>You already started.</b> The timer keeps running — press Resume to continue where you left off.</div>' : '') +
-    '<h3 style="margin-top:14px">What you will do</h3><ul>' + (st.modules || []).map(m => '<li>' + (MOD_INFO[m] || esc(m)) + '</li>').join('') + '</ul>' +
+    '<h3 style="margin-top:14px">What you will do</h3><ul>' + (st.modules || []).map(m => '<li>' + (MOD_INFO[m.module] || esc(m.module)) + ' <span class="chip">' + esc(m.level) + '</span></li>').join('') + '</ul>' +
     '<h3 style="margin-top:14px">Rules</h3><ul>' +
     '<li>The countdown starts when you press <b>Start</b> and cannot be paused. When it reaches zero your answers are submitted automatically.</li>' +
     '<li>Answers save automatically. You can run your code as many times as you like.</li>' +
@@ -740,6 +762,8 @@ function ansOf(id) { return S.ans[id] || (S.ans[id] = { response: '', output: nu
 function isAnswered(q) {
   const a = S.ans[q.id]; if (!a || a.response === '' || a.response == null) return false;
   if (isCode(q)) { const r = String(a.response).trim(); return r !== '' && r !== String(q.starter || '').trim(); }
+  if (q.type === 'chat') { try { return (JSON.parse(a.response).turns || []).some(t => t.who === 'candidate'); } catch (e) { return false; } }
+  if (q.type === 'voice') { try { return !!JSON.parse(a.response).fileId; } catch (e) { return false; } }
   return String(a.response).trim() !== '';
 }
 
@@ -816,7 +840,13 @@ function renderQ() {
       '<input id="xlIn" class="xlf" type="text" spellcheck="false" autocomplete="off" placeholder="=SUM(F2:F21)" value="' + esc(a.response) + '">' +
       '<button class="btn primary" id="xlBtn">Calculate</button></div><div id="result"></div>';
   } else if (q.type === 'text') {
-    h += '<label for="essay">Your recommendation</label><textarea id="essay" class="essay" spellcheck="true" placeholder="Write in English…">' + esc(a.response) + '</textarea><div class="hint" id="wc"></div>';
+    const enOnly = q.module === 'english';
+    h += '<label for="essay">' + (es && !enOnly ? 'Tu respuesta' : 'Your answer') + '</label><textarea id="essay" class="essay" spellcheck="true" placeholder="' + (enOnly ? 'Write in English…' : es ? 'Escribe tu respuesta…' : 'Write your answer…') + '">' + esc(a.response) + '</textarea><div class="hint" id="wc"></div>';
+  } else if (q.type === 'chat') {
+    h += '<div class="chat" id="chatBox" aria-live="polite"></div>' +
+      '<div class="runbar" style="align-items:flex-end"><textarea id="chatText" class="essay" style="min-height:70px;flex:1" placeholder="Write your reply in English…"></textarea><button class="btn primary" id="chatSend">Send</button></div><div class="hint" id="chatHint"></div>';
+  } else if (q.type === 'voice') {
+    h += '<div class="audio"><button class="btn primary" id="recBtn">● Record answer</button><span class="hint" id="recInfo"></span></div><div id="recPrev"></div><div class="hint" id="recTr" style="margin-top:6px"></div>';
   } else {
     if (q.type === 'sql') h += schemaHtml();
     h += '<label for="code">' + (q.type === 'sql' ? 'SQL editor (SQLite dialect)' : 'Python editor (Python 3)') + '</label>' +
@@ -842,6 +872,8 @@ function renderQ() {
     renderResult(q);
   }
   if (q.audio) bindAudio(q);
+  if (q.type === 'chat') bindChat(q);
+  if (q.type === 'voice') bindVoice(q);
   if (isCode(q)) {
     const ed = $('#code'); if (a.response === '' && q.starter) { a.response = q.starter; }
     ed.addEventListener('input', () => setAns(q, ed.value));
@@ -887,16 +919,97 @@ function bindAudio(q) {
   };
 }
 
+/* ------------------------------ written role play ------------------------------ */
+function chatState(q) {
+  let r = null; try { r = JSON.parse(ansOf(q.id).response); } catch (e) {}
+  return r && Array.isArray(r.turns) ? r : { turns: [{ who: 'other', text: q.opening }], done: false };
+}
+function bindChat(q) {
+  const box = $('#chatBox'), ta = $('#chatText'), btn = $('#chatSend'), hint = $('#chatHint');
+  const draw = (st, typing) => {
+    box.innerHTML = st.turns.map(t => '<div class="bub ' + (t.who === 'candidate' ? 'me' : 'other') + '">' + esc(t.text) + '</div>').join('') + (typing ? '<div class="bub other"><span class="spin"></span></div>' : '');
+    box.scrollTop = box.scrollHeight;
+    const mine = st.turns.filter(t => t.who === 'candidate').length;
+    hint.textContent = st.done ? 'Conversation finished. You can move to the next question.' : 'Reply ' + Math.min(mine + 1, q.maxTurns) + ' of ' + q.maxTurns;
+    ta.disabled = btn.disabled = !!st.done || !!typing;
+  };
+  draw(chatState(q));
+  const send = async () => {
+    const text = ta.value.trim(); if (!text) return;
+    const st = chatState(q);
+    st.turns.push({ who: 'candidate', text }); ta.value = '';
+    setAns(q, JSON.stringify(st)); draw(st, true);
+    try {
+      const r = await api.api_roleplayTurn(S.token, q.id, st.turns);
+      if (r.reply) st.turns.push({ who: 'other', text: r.reply });
+      st.done = !!r.done;
+    } catch (e) {
+      if (isSessionErr(e)) return sessionLost();
+      st.turns.pop(); ta.value = text; toast('Could not send: ' + e.message);
+    }
+    setAns(q, JSON.stringify(st));
+    if (S.q[S.i] === q) draw(st, false);
+  };
+  btn.onclick = send;
+  ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+}
+
+/* ------------------------------ spoken answer (microphone) ------------------------------
+   Records with MediaRecorder; Chrome/Edge also give a live transcript (Web Speech API) that the AI grades.
+   The audio file goes to the company's private Google Drive folder for the admin to listen to. */
+function bindVoice(q) {
+  const btn = $('#recBtn'), info = $('#recInfo'), prev = $('#recPrev'), tr = $('#recTr');
+  let saved = null; try { saved = JSON.parse(ansOf(q.id).response); } catch (e) {}
+  const showSaved = s => { info.textContent = s && s.fileId ? '✓ Answer saved (' + s.seconds + ' s). You can record again to replace it.' : 'Up to ' + q.maxSec + ' seconds. Allow the microphone when asked.'; tr.textContent = s && s.transcript ? 'Transcript: ' + s.transcript : ''; };
+  showSaved(saved);
+  if (!navigator.mediaDevices || !window.MediaRecorder) { btn.disabled = true; info.textContent = 'Recording is not supported in this browser. Use Chrome or Edge.'; return; }
+  let rec = null, chunks = [], stream = null, t0 = 0, tick = null, sr = null, finalText = '';
+  const stop = () => { if (rec && rec.state === 'recording') rec.stop(); };
+  btn.onclick = async () => {
+    if (rec && rec.state === 'recording') return stop();
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { info.textContent = 'Microphone blocked: allow it in the address bar and try again.'; return; }
+    chunks = []; finalText = '';
+    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+    rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+      sr = new SR(); sr.lang = 'en-US'; sr.continuous = true; sr.interimResults = true;
+      sr.onresult = ev => { let interim = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const t = ev.results[i][0].transcript; if (ev.results[i].isFinal) finalText += t + ' '; else interim += t; } tr.textContent = 'Transcript: ' + finalText + interim; };
+      sr.onerror = () => {}; try { sr.start(); } catch (e) {}
+    }
+    rec.onstop = async () => {
+      clearInterval(tick); if (sr) try { sr.stop(); } catch (e) {}
+      stream.getTracks().forEach(t => t.stop());
+      const secs = Math.round((Date.now() - t0) / 1000), blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+      btn.textContent = '● Record again'; btn.disabled = true; info.textContent = 'Uploading…';
+      prev.innerHTML = '<audio controls src="' + URL.createObjectURL(blob) + '" style="width:100%;max-width:420px;margin-top:6px"></audio>';
+      try {
+        const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+        await new Promise(r => setTimeout(r, 600));   // let the last transcript words arrive
+        const r = await api.api_uploadAudio(S.token, q.id, b64, blob.type, finalText.trim(), secs);
+        setAns(q, JSON.stringify(r)); showSaved(r);
+      } catch (e) { if (isSessionErr(e)) return sessionLost(); info.textContent = 'Upload failed: ' + e.message + ' — record again.'; }
+      btn.disabled = false;
+    };
+    t0 = Date.now(); rec.start(1000); logEv('mic_record', q.id);
+    btn.textContent = '■ Stop'; prev.innerHTML = '';
+    tick = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000); info.textContent = '🔴 Recording… ' + s + ' / ' + q.maxSec + ' s'; if (s >= q.maxSec) stop(); }, 250);
+  };
+}
+
 /* what each module means, for the candidate's welcome page */
 const MOD_INFO = {
-  sql: '<b>SQL</b> — clean messy booking data, join tables and build a view, in a <b>live SQL editor</b>.',
-  python: '<b>Python</b> — small data-cleaning functions in a <b>live Python editor</b>.',
-  powerquery: '<b>Power Query (M)</b> — data transformation questions.',
-  dax: '<b>DAX</b> — measures and filter context.',
-  pricing: '<b>Pricing &amp; revenue</b> calculations (built-in calculator).',
-  case: 'A short <b>business case</b>, written in English.',
-  excel: '<b>Excel</b> — write formulas on a small sheet; they are calculated instantly.',
-  english: '<b>English</b> — listening (audio: use <b>speakers or headphones</b>), reading and grammar.'
+  english: '<b>English</b> — listening (audio: use <b>speakers or headphones</b>), reading, grammar and a short writing task.',
+  roleplay: '<b>Role play in English</b> — a written chat with a simulated passenger or client and a spoken answer (needs a <b>microphone</b>).',
+  excel: '<b>Excel</b> — write formulas on a small bookings sheet; they are calculated instantly.',
+  powerbi: '<b>Power BI</b> — model, visuals, Power Query and DAX questions.',
+  sql: '<b>SQL</b> — clean and join booking data in a <b>live SQL editor</b>.',
+  python: '<b>Python</b> — small data functions in a <b>live Python editor</b>.',
+  logic: '<b>Logic &amp; reasoning</b> — sequences, deductions and short puzzles (built-in calculator).',
+  revenue: '<b>Revenue management</b> — load factor, net rates, overbooking and pricing decisions for tours and the theme park.',
+  commercial: '<b>Commercial &amp; sales</b> — upselling, negotiation with cruise lines, contracts and a written proposal.'
 };
 
 /* result rendering */
@@ -1007,12 +1120,13 @@ function finishCleanup() { if (S.cam) S.cam.getTracks().forEach(t => t.stop()); 
 /* ====================================================================
  *  ADMIN
  * ==================================================================== */
-let ADM = { tab: 'cands', list: [], cfg: null };
+let ADM = { tab: 'cands', list: [], mods: null };
 async function loadAdmin() {
   show('v-admin'); $('#admName').textContent = S.name;
   $('#admTabs').onclick = e => { const b = e.target.closest('.tab'); if (b) { ADM.tab = b.dataset.tab; renderAdmin(); } };
   renderAdmin();
 }
+async function getMods() { if (!ADM.mods) ADM.mods = await api.api_adminModules(S.token); return ADM.mods; }
 async function renderAdmin() {
   $$('#admTabs .tab').forEach(t => t.classList.toggle('on', t.dataset.tab === ADM.tab));
   const body = $('#admBody'); body.innerHTML = '<p class="muted"><span class="spin"></span> Loading…</p>';
@@ -1024,86 +1138,198 @@ async function renderAdmin() {
 }
 const STATUS = { not_started: ['Invited', ''], in_progress: ['In progress', 'warn'], submitted: ['Submitted', 'ok'], timeout: ['Timed out', 'warn'] };
 const RATING = { 'Recommended': 'ok', 'Review': 'warn', 'Not recommended': 'bad' };
+const ITEM = { correct: 'ok', partial: 'warn', wrong: 'bad', ai_scored: 'ok', pending: 'warn' };
+
 async function renderCands(body) {
   ADM.list = await api.api_adminList(S.token);
   body.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="muted">' + ADM.list.length + ' candidate(s)</div><button class="btn sm" id="refresh">↻ Refresh</button></div>' +
-    '<div class="tbl-wrap"><table class="list"><thead><tr><th>Candidate</th><th>Test</th><th>Status</th><th>Score</th><th>Rating</th><th>Submitted</th><th>HR mail</th><th></th></tr></thead><tbody>' +
+    '<div class="tbl-wrap"><table class="list"><thead><tr><th>Candidate</th><th>Test</th><th>Status</th><th>Score</th><th>Rating</th><th>Submitted</th><th></th></tr></thead><tbody>' +
     (ADM.list.length ? ADM.list.map(c => {
-      const st = STATUS[c.status] || [c.status, '']; return '<tr><td><b>' + esc(c.name) + '</b><div class="hint">' + esc(c.email) + ' · ' + esc(c.username) + '</div></td>' +
-        '<td class="hint">' + esc(c.testName || '') + '</td>' +
-        '<td><span class="chip ' + st[1] + '">' + st[0] + '</span></td><td>' + (c.pct != null ? '<b>' + c.pct + '%</b>' : '—') + '</td>' +
+      const st = STATUS[c.status] || [c.status, ''];
+      return '<tr><td><b>' + esc(c.name) + '</b><div class="hint">' + esc(c.email) + ' · ' + esc(c.username) + '</div></td>' +
+        '<td style="white-space:normal;max-width:280px" class="hint">' + esc(c.testName || '—') + '</td>' +
+        '<td><span class="chip ' + st[1] + '">' + st[0] + '</span>' + (c.attemptNo > 1 ? ' <span class="chip">attempt ' + c.attemptNo + '</span>' : '') + (c.retake ? ' <span class="chip warn">retake allowed</span>' : '') + '</td>' +
+        '<td>' + (c.pct != null ? '<b>' + c.pct + '%</b>' : '—') + '</td>' +
         '<td>' + (c.rating ? '<span class="chip ' + (RATING[c.rating] || '') + '">' + esc(c.rating) + '</span>' : '—') + '</td><td>' + fmtDate(c.submittedMs) + '</td>' +
-        '<td class="hint">' + esc(String(c.mailed || '—').split(' ')[0]) + '</td>' +
         '<td><button class="btn sm" data-view="' + esc(c.username) + '">Open</button></td></tr>';
-    }).join('') : '<tr><td colspan="8" class="muted" style="padding:24px;text-align:center">No candidates yet. Create one in the “New candidate” tab.</td></tr>') + '</tbody></table></div>';
+    }).join('') : '<tr><td colspan="7" class="muted" style="padding:24px;text-align:center">No candidates yet. Create one in the “New candidate” tab.</td></tr>') + '</tbody></table></div>';
   $('#refresh').onclick = renderAdmin;
   $$('[data-view]', body).forEach(b => b.onclick = () => openDetail(b.dataset.view));
 }
+
+/* module + level picker (new candidate, change test, second attempt) */
+function pickerHtml(mods, spec) {
+  const cur = {}; String(spec || '').split(',').forEach(s => { const p = s.split(':'); if (p[0]) cur[p[0].trim()] = (p[1] || 'Basic').trim(); });
+  return '<div class="picker">' + mods.map(m => '<label class="pk"><input type="checkbox" data-m="' + m.key + '"' + (cur[m.key] ? ' checked' : '') + '><span>' + esc(m.name) + ' <span class="hint">· ' + esc(m.es) + '</span></span>' +
+    '<select data-l="' + m.key + '" aria-label="Level for ' + esc(m.name) + '">' + m.levels.map(l => '<option value="' + l.level + '"' + (cur[m.key] === l.level ? ' selected' : '') + '>' + l.level + ' · ' + l.minutes + ' min · ' + l.questions + ' q</option>').join('') + '</select></label>').join('') +
+    '</div><div class="hint" id="pkTotal" style="margin-top:6px"></div>';
+}
+function pickerSpec(root) { return $$('input[data-m]', root).filter(c => c.checked).map(c => c.dataset.m + ':' + $('select[data-l="' + c.dataset.m + '"]', root).value).join(','); }
+function pickerBind(root, mods) {
+  const upd = () => {
+    let min = 0, qn = 0; const spec = pickerSpec(root);
+    spec.split(',').filter(Boolean).forEach(s => { const p = s.split(':'), L = mods.find(x => x.key === p[0]).levels.find(x => x.level === p[1]); min += L.minutes; qn += L.questions; });
+    $('#pkTotal', root).textContent = spec ? 'Total: ' + min + ' minutes · ' + qn + ' questions' : 'Choose at least one module.';
+  };
+  root.addEventListener('change', e => { if (e.target.matches('select[data-l]')) { const c = $('input[data-m="' + e.target.dataset.l + '"]', root); if (c) c.checked = true; } upd(); });
+  upd();
+}
+async function pickerModal(title, intro, spec, okLabel) {
+  const mods = await getMods();
+  const p = modal('<h3>' + esc(title) + '</h3><p class="muted" style="margin:0 0 6px">' + intro + '</p><div id="pkRoot">' + pickerHtml(mods, spec) + '</div>', [{ label: 'Cancel', value: null }, { label: okLabel, value: 'ok', kind: 'primary' }]);
+  const root = $('#pkRoot'); pickerBind(root, mods);
+  let chosen = ''; root.addEventListener('change', () => { chosen = pickerSpec(root); }); chosen = pickerSpec(root);
+  const v = await p; return v ? chosen : null;
+}
+
 async function renderNew(body) {
-  const roles = await api.api_adminRoles(S.token);
-  const MOD = { sql: 'SQL', python: 'Python', powerquery: 'Power Query', dax: 'DAX', pricing: 'Pricing', case: 'Case', excel: 'Excel', english: 'English' };
-  body.innerHTML = '<div class="card" style="max-width:520px"><h3>Invite a candidate</h3><p class="muted" style="margin:4px 0 0">One attempt per candidate. Only an admin can reset it.</p>' +
+  const mods = await getMods();
+  body.innerHTML = '<div class="card" style="max-width:640px"><h3>Invite a candidate</h3><p class="muted" style="margin:4px 0 0">Choose the modules and the level of each one. One attempt per candidate; only an admin can allow a second one.</p>' +
     '<label for="nn">Full name</label><input id="nn" type="text"><label for="ne">Email</label><input id="ne" type="email">' +
-    '<label for="nr">Test (role)</label><select id="nr">' + roles.map(r => '<option value="' + esc(r.key) + '">' + esc(r.name) + ' — ' + r.durationMin + ' min</option>').join('') + '</select>' +
-    '<div class="hint" id="nrInfo" style="margin-top:6px"></div>' +
+    '<label>Test: modules and level</label><div id="pkNew">' + pickerHtml(mods, '') + '</div>' +
     '<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:14px"><input type="checkbox" id="ns" checked style="width:auto"> Email the credentials to the candidate</label>' +
     '<div id="nerr" class="err hidden"></div><button class="btn primary" id="nbtn" style="margin-top:16px">Create candidate</button></div>';
-  const info = () => { const r = roles.find(x => x.key === $('#nr').value); $('#nrInfo').textContent = r ? r.modules.map(m => MOD[m] || m).join(' · ') + ' · ' + r.questions + ' questions' : ''; };
-  $('#nr').onchange = info; info();
+  pickerBind($('#pkNew'), mods);
   $('#nbtn').onclick = async () => {
     const btn = $('#nbtn'), err = $('#nerr'); err.classList.add('hidden'); btn.disabled = true;
     try {
-      const r = await api.api_adminCreate(S.token, $('#nn').value, $('#ne').value, $('#ns').checked, $('#nr').value);
-      await modal('<h3>Candidate created</h3><p class="muted">Save these credentials now — the password cannot be shown again.</p><div class="cred">URL: ' + esc(r.url || '(deploy the web app to get the URL)') + '<br>Username: <b>' + esc(r.username) + '</b><br>Password: <b>' + esc(r.password) + '</b></div><p>' + (r.emailed ? '✅ The credentials were emailed to the candidate.' : 'ℹ️ No email was sent — share the credentials yourself.') + '</p>', [{ label: 'Done', value: true, kind: 'primary' }]);
+      const r = await api.api_adminCreate(S.token, $('#nn').value, $('#ne').value, $('#ns').checked, pickerSpec($('#pkNew')));
+      await modal('<h3>Candidate created</h3><p class="muted">Save these credentials now — the password cannot be shown again.</p><div class="cred">URL: ' + esc(r.url) + '<br>Username: <b>' + esc(r.username) + '</b><br>Password: <b>' + esc(r.password) + '</b><br>Duration: ' + r.minutes + ' min</div><p>' + (r.emailed ? '✅ The credentials were emailed to the candidate.' : 'ℹ️ No email was sent — share the credentials yourself.') + '</p>', [{ label: 'Done', value: true, kind: 'primary' }]);
       ADM.tab = 'cands'; renderAdmin();
     } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); btn.disabled = false; }
   };
 }
+
+/* logo: resized in the browser (max 360×120) before upload */
+function resizeLogo(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, 360 / img.width, 120 / img.height), c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      let d = c.toDataURL('image/png'); if (d.length > 280000) d = c.toDataURL('image/webp', 0.9);
+      res(d);
+    };
+    img.onerror = () => rej(new Error('Not a valid image'));
+    img.src = url;
+  });
+}
 async function renderSettings(body) {
-  const c = await api.api_adminConfig(S.token);
-  body.innerHTML = '<div class="card" style="max-width:520px"><h3>Settings</h3>' +
+  const c = await api.api_adminConfig(S.token), br = await api.api_branding();
+  body.innerHTML = '<div class="card" style="max-width:560px"><h3>Settings</h3>' +
+    '<label>Company logo</label><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><div class="cam-box" style="width:200px;height:80px;background:var(--soft)" id="logoPrev">' + (br.logo ? '<img src="' + esc(br.logo) + '" style="max-width:100%;max-height:100%">' : '<span class="muted">No logo</span>') + '</div>' +
+    '<div><input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" style="width:auto"><div><button class="btn sm" id="logoDel" style="margin-top:6px">Remove logo</button></div></div></div>' +
     '<label for="sh">HR email (receives every result)</label><input id="sh" type="email" value="' + esc(c.hrEmail) + '">' +
     '<label for="su">Assessment URL (sent to candidates)</label><input id="su" type="text" value="' + esc(c.appUrl || '') + '">' +
-    '<p class="hint" style="margin:6px 0 0">Durations are set per role.</p>' +
     '<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:14px"><input type="checkbox" id="sc" style="width:auto" ' + (c.cameraRequired ? 'checked' : '') + '> Webcam required to start</label>' +
-    '<p class="hint">Changes apply to attempts that start from now on.</p><div id="serr" class="err hidden"></div><button class="btn primary" id="sbtn" style="margin-top:8px">Save settings</button></div>';
+    '<label for="sk">AI grading — Anthropic API key</label><input id="sk" type="password" autocomplete="off" placeholder="' + (c.aiConfigured ? 'Configured ✓ (type a new key to replace it)' : 'sk-ant-…  (not configured: open answers stay pending)') + '">' +
+    '<p class="hint">The key is stored only on the server and is never shown again. Open answers (writing, cases, role plays) are scored by AI and then reviewed by you.</p>' +
+    (c.aiConfigured ? '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="skDel" style="width:auto"> Remove the AI key</label>' : '') +
+    '<div id="serr" class="err hidden"></div><button class="btn primary" id="sbtn" style="margin-top:8px">Save settings</button></div>';
+  $('#logoFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const d = await resizeLogo(f); await api.api_adminSetLogo(S.token, d); $('#logoPrev').innerHTML = '<img src="' + d + '" style="max-width:100%;max-height:100%">'; applyBranding(d); try { localStorage.setItem('gc_logo', d); } catch (x) {} toast('Logo updated'); }
+    catch (x) { toast(x.message); }
+  };
+  $('#logoDel').onclick = async () => { await api.api_adminSetLogo(S.token, ''); $('#logoPrev').innerHTML = '<span class="muted">No logo</span>'; applyBranding(''); try { localStorage.removeItem('gc_logo'); } catch (x) {} toast('Logo removed'); };
   $('#sbtn').onclick = async () => {
     const err = $('#serr'); err.classList.add('hidden');
-    try { await api.api_adminConfig(S.token, { hrEmail: $('#sh').value, appUrl: $('#su').value.trim(), cameraRequired: $('#sc').checked }); toast('Settings saved'); }
-    catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+    try {
+      const del = $('#skDel') && $('#skDel').checked;
+      await api.api_adminConfig(S.token, { hrEmail: $('#sh').value, appUrl: $('#su').value.trim(), cameraRequired: $('#sc').checked, aiKey: $('#sk').value.trim() || null, aiKeyClear: !!del });
+      toast('Settings saved'); renderSettings(body);
+    } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
   };
 }
-async function openDetail(username) {
+
+async function openDetail(username, attemptNo) {
   const body = $('#admBody'); body.innerHTML = '<p class="muted"><span class="spin"></span> Loading…</p>';
   try {
-    const d = await api.api_adminDetail(S.token, username), at = d.attempt, det = d.detail;
-    let h = '<button class="btn sm" id="back">← Back</button><div class="card" style="margin-top:12px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h2>' + esc(d.user.name) + '</h2><div class="muted">' + esc(d.user.email) + ' · ' + esc(d.user.username) + '</div></div><div class="kv" style="align-self:start">' +
-      '<button class="btn sm" id="regrade">Regrade</button><button class="btn sm" id="resend">Resend to HR</button><button class="btn sm danger" id="reset">Reset attempt</button></div></div>';
-    if (!at) h += '<p class="muted">Has not started.</p>';
+    const d = await api.api_adminDetail(S.token, username, attemptNo || null), at = d.attempt, det = d.detail;
+    const notStarted = !at, label = det ? det.label : '';
+    let h = '<button class="btn sm" id="back">← Back</button><div class="card" style="margin-top:12px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h2>' + esc(d.user.name) + '</h2><div class="muted">' + esc(d.user.email) + ' · ' + esc(d.user.username) + '</div></div>' +
+      '<div class="kv" style="align-self:start">' +
+      (at && at.status !== 'in_progress' ? '<button class="btn sm" id="regrade">Regrade</button><button class="btn sm" id="resend">Resend to HR</button>' : '') +
+      (d.canRetake && !d.user.retake ? '<button class="btn sm primary" id="retake">Allow 2nd attempt</button>' : '') +
+      (notStarted || d.user.retake ? '<button class="btn sm" id="chtest">Change test</button>' : '') +
+      (at ? '<button class="btn sm danger" id="reset">Reset attempt</button>' : '') + '</div></div>';
+    if (d.attempts.length > 1) h += '<div class="tabs" style="margin:10px 0 0">' + d.attempts.map(a => '<button class="tab' + (at && a.no === at.no ? ' on' : '') + '" data-att="' + a.no + '">Attempt ' + a.no + (a.pct != null ? ' · ' + a.pct + '%' : '') + '</button>').join('') + '</div>';
+    if (d.user.retake) h += '<div class="note" style="margin-top:10px">Second attempt allowed — waiting for the candidate to start.</div>';
+    if (notStarted) h += '<p class="muted" style="margin-top:10px">Has not started. Assigned test: ' + esc(d.user.spec.split(',').join(' · ')) + '</p>';
     else {
-      h += '<p style="margin:12px 0 4px">Started ' + fmtDate(at.startedMs) + ' · Submitted ' + fmtDate(at.submittedMs) + ' · Status <span class="chip ' + ((STATUS[at.status] || [])[1] || '') + '">' + esc((STATUS[at.status] || [at.status])[0]) + '</span></p>';
-      if (det && det.roleName) h += '<p class="muted" style="margin:0 0 4px">Test: ' + esc(det.roleName) + '</p>';
-      if (at.pct != null) h += '<p style="font-size:26px;margin:6px 0"><b>' + at.pct + '%</b> <span class="hint" style="font-size:14px">(' + at.total + (det && det.max ? ' / ' + det.max : '') + ' pts)</span> <span class="chip ' + (RATING[at.rating] || '') + '" style="font-size:14px">' + esc(at.rating) + '</span></p>';
-      if (det && det.levels && Object.keys(det.levels).length) h += '<div class="kv">' + Object.keys(det.levels).map(k => '<span class="chip ok">' + esc(k) + ': ' + esc(det.levels[k]) + '</span>').join('') + '</div>';
+      h += '<p style="margin:12px 0 4px">' + esc(label) + '</p><p class="hint" style="margin:0">Started ' + fmtDate(at.startedMs) + ' · Submitted ' + fmtDate(at.submittedMs) + ' · <span class="chip ' + ((STATUS[at.status] || [])[1] || '') + '">' + esc((STATUS[at.status] || [at.status])[0]) + '</span></p>';
+      if (at.pct != null) h += '<p style="font-size:26px;margin:8px 0"><b>' + at.pct + '%</b> <span class="chip ' + (RATING[at.rating] || '') + '" style="font-size:14px">' + esc(at.rating) + '</span></p>';
     }
     h += '</div>';
     if (det) {
-      h += '<div class="card" style="margin-top:14px"><h3>Sections</h3><div class="bars">' + Object.keys(det.sections).map(k => { const s = det.sections[k], p = s.max ? s.score / s.max * 100 : 0;
-        return '<div class="bar-row"><span>' + esc(k) + '</span><div class="track"><div class="fill" style="width:' + p + '%"></div></div><b>' + s.score + ' / ' + s.max + '</b></div>'; }).join('') + '</div></div>';
-      const ev = det.events || {}; const evs = Object.keys(ev).filter(k => !/^(start|submit|timeout_submit)$/.test(k));
+      h += '<div class="card" style="margin-top:14px"><h3>Result by module and level</h3><div class="tbl-wrap" style="margin-top:8px;border:0"><table class="list"><thead><tr><th>Module</th><th>Level</th><th>Score</th><th>Result</th></tr></thead><tbody>' +
+        det.modules.map(m => '<tr><td>' + esc(m.name) + '</td><td>' + esc(m.level) + (m.cefr ? ' <span class="hint">(' + m.cefr + ')</span>' : '') + '</td><td><b>' + m.pct + '%</b> <span class="hint">' + m.score + '/' + m.max + '</span></td><td><span class="chip ' + (m.result === 'Meets level' ? 'ok' : m.result === 'Partially meets' ? 'warn' : 'bad') + '">' + esc(m.result) + '</span></td></tr>').join('') + '</tbody></table></div></div>';
+      const ev = det.events || {}, evs = Object.keys(ev).filter(k => !/^(start|submit|timeout_submit|audio_play|audio_recorded|mic_record)$/.test(k));
       h += '<div class="card" style="margin-top:14px"><h3>Integrity log</h3><div class="kv" style="margin-top:8px">' + (evs.length ? evs.map(k => '<span class="chip ' + (/camera_lost|tab_hidden/.test(k) ? 'warn' : '') + '">' + esc(k) + ': ' + ev[k] + '</span>').join('') : '<span class="chip ok">No incidents logged</span>') + '</div></div>';
-      h += '<div class="card" style="margin-top:14px"><h3>Questions</h3><div class="tbl-wrap" style="margin-top:8px;border:0"><table class="list"><thead><tr><th>#</th><th>Question</th><th>Score</th><th>Result</th><th></th></tr></thead><tbody>' +
-        det.items.map((it, i) => '<tr><td>' + (i + 1) + '</td><td>' + esc(it.title) + '<div class="hint">' + esc(it.section) + '</div></td><td><b>' + it.score + '</b> / ' + it.points + '</td><td style="white-space:normal;max-width:360px"><span class="chip ' + ({ correct: 'ok', partial: 'warn', wrong: 'bad' }[it.status] || '') + '">' + esc(it.status) + '</span> <span class="hint">' + esc(it.note) + '</span></td><td>' +
-          (d.answers[it.id] && d.answers[it.id].response ? '<button class="btn sm" data-ans="' + esc(it.id) + '">Answer</button>' : '') + '</td></tr>').join('') + '</tbody></table></div></div>';
+      h += '<div class="card" style="margin-top:14px"><h3>Questions</h3><p class="hint">Open answers (✍) are scored by AI; open them to confirm or change the score.</p><div class="tbl-wrap" style="margin-top:8px;border:0"><table class="list"><thead><tr><th>#</th><th>Question</th><th>Score</th><th>Result</th><th></th></tr></thead><tbody>' +
+        det.items.map((it, i) => '<tr><td>' + (i + 1) + '</td><td style="white-space:normal">' + (it.open ? '✍ ' : '') + esc(it.title) + '<div class="hint">' + esc(it.section) + ' · ' + esc(it.level) + '</div></td>' +
+          '<td><b>' + (it.final != null ? it.final : it.score) + '</b> / ' + it.points + (it.override ? ' <span class="chip">admin</span>' : it.ai ? ' <span class="chip">AI</span>' : '') + '</td>' +
+          '<td style="white-space:normal;max-width:380px"><span class="chip ' + (ITEM[it.status] || '') + '">' + esc(it.status.replace('_', ' ')) + '</span> <span class="hint">' + esc(it.note) + '</span></td>' +
+          '<td><button class="btn sm" data-item="' + esc(it.id) + '">' + (it.open ? 'Review' : 'Answer') + '</button></td></tr>').join('') + '</tbody></table></div></div>';
     }
     if (d.events.length) h += '<details class="card" style="margin-top:14px"><summary>Event timeline (' + d.events.length + ')</summary><div class="hint" style="margin-top:6px;line-height:1.8">' + d.events.map(e => esc(fmtDate(e.ts)) + ' — <b>' + esc(e.type) + '</b> ' + esc(e.detail)).join('<br>') + '</div></details>';
     body.innerHTML = h;
+
     $('#back').onclick = renderAdmin;
-    $$('[data-ans]', body).forEach(b => b.onclick = () => { const id = b.dataset.ans, q = d.detail.items.find(x => x.id === id); modal('<h3>' + esc(q.title) + '</h3><pre class="block" style="white-space:pre-wrap;max-height:50vh">' + esc(d.answers[id].response) + '</pre>', [{ label: 'Close', value: true, kind: 'primary' }]); });
-    $('#regrade').onclick = async () => { try { const r = await api.api_adminRegrade(S.token, username); toast('Regraded: ' + r.total + ' / 100'); openDetail(username); } catch (e) { toast(e.message); } };
-    $('#resend').onclick = async () => { try { const r = await api.api_adminResend(S.token, username); toast(r.result); } catch (e) { toast(e.message); } };
-    $('#reset').onclick = async () => { if (await confirmBox('Reset this attempt?', 'All saved answers of <b>' + esc(d.user.name) + '</b> are deleted and they can start again. This cannot be undone.', 'Reset attempt', 'danger')) { try { await api.api_adminReset(S.token, username); toast('Attempt reset'); renderAdmin(); } catch (e) { toast(e.message); } } };
+    $$('[data-att]', body).forEach(b => b.onclick = () => openDetail(username, +b.dataset.att));
+    $$('[data-item]', body).forEach(b => b.onclick = () => reviewItem(username, d, b.dataset.item));
+    const bind = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
+    bind('regrade', async () => { try { const r = await api.api_adminRegrade(S.token, username); toast('Regraded: ' + r.pct + '%'); openDetail(username); } catch (e) { toast(e.message); } });
+    bind('resend', async () => { try { const r = await api.api_adminResend(S.token, username); toast(r.result); } catch (e) { toast(e.message); } });
+    bind('retake', async () => {
+      const spec = await pickerModal('Allow a second attempt', 'Both attempts are kept. You can keep the same test or change modules/levels.', (det && det.spec) || d.user.spec, 'Allow 2nd attempt');
+      if (spec === null) return;
+      try { await api.api_adminAllowRetake(S.token, username, spec); toast('Second attempt allowed'); openDetail(username); } catch (e) { toast(e.message); }
+    });
+    bind('chtest', async () => {
+      const spec = await pickerModal('Change the test', 'Applies to the next attempt the candidate starts.', d.user.spec, 'Save test');
+      if (spec === null) return;
+      try { const r = await api.api_adminSetTest(S.token, username, spec); toast('Test updated: ' + r.minutes + ' min'); openDetail(username); } catch (e) { toast(e.message); }
+    });
+    bind('reset', async () => {
+      if (await confirmBox('Reset this attempt?', 'The answers of this attempt of <b>' + esc(d.user.name) + '</b> are deleted and they can start again. This cannot be undone. To keep the first attempt, use “Allow 2nd attempt” instead.', 'Reset attempt', 'danger')) {
+        try { await api.api_adminReset(S.token, username); toast('Attempt reset'); renderAdmin(); } catch (e) { toast(e.message); }
+      }
+    });
   } catch (e) { if (isSessionErr(e)) return sessionLost(); body.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+}
+
+/* one question: candidate answer, AI feedback and the admin score */
+async function reviewItem(username, d, id) {
+  const it = d.detail.items.find(x => x.id === id), ans = d.answers[id] || {}, op = d.open[id];
+  let body = '';
+  if (op) {
+    body += '<div class="hint" style="margin-bottom:4px">Rubric</div><ul style="margin:0 0 8px 18px;padding:0;font-size:14px">' + op.rubric.map(r => '<li>' + esc(r) + '</li>').join('') + '</ul>';
+    if (it.type === 'voice') { let v = {}; try { v = JSON.parse(ans.response); } catch (e) {} if (v.fileId) body += '<button class="btn sm" id="playRec">▶ Play recording (' + (v.seconds || '?') + ' s)</button><div id="recSlot"></div>'; }
+    body += '<div class="hint" style="margin:8px 0 4px">' + (it.type === 'chat' ? 'Conversation' : it.type === 'voice' ? 'Automatic transcript' : 'Answer') + '</div><pre class="block" style="white-space:pre-wrap;max-height:34vh">' + esc(op.text || '(no answer)') + '</pre>';
+    if (it.ai) body += '<div class="review"><b>AI score: ' + it.ai.score + ' / ' + it.points + '</b><br>' + esc(it.ai.feedback) + (it.ai.criteria && it.ai.criteria.length ? '<ul style="margin:6px 0 0 18px;padding:0">' + it.ai.criteria.map(c => '<li>' + (c.met ? '✓ ' : '✗ ') + esc(c.criterion) + '</li>').join('') + '</ul>' : '') + '</div>';
+    body += '<label for="ovScore">Your score (0–' + it.points + ')</label><input id="ovScore" type="number" min="0" max="' + it.points + '" step="0.5" value="' + (it.override ? it.override.score : it.ai ? it.ai.score : '') + '" style="max-width:140px">' +
+      '<label for="ovNote">Note (optional)</label><input id="ovNote" type="text" value="' + esc(it.override ? it.override.note : '') + '">';
+  } else {
+    body += '<pre class="block" style="white-space:pre-wrap;max-height:50vh">' + esc(ans.response || '(no answer)') + '</pre><p class="hint">' + esc(it.note) + '</p>';
+  }
+  const p = modal('<h3>' + esc(it.title) + '</h3><p class="hint" style="margin-top:0">' + esc(it.section) + ' · ' + esc(it.level) + '</p>' + body,
+    op ? [{ label: 'Close', value: null }].concat(it.override ? [{ label: 'Use AI score', value: 'clear' }] : []).concat([{ label: 'Save score', value: 'save', kind: 'primary' }]) : [{ label: 'Close', value: null, kind: 'primary' }]);
+  const pr = $('#playRec');
+  if (pr) pr.onclick = async () => {
+    pr.disabled = true; pr.textContent = 'Loading…';
+    try { let v = JSON.parse(ans.response); const a = await api.api_adminAudio(S.token, v.fileId); $('#recSlot').innerHTML = '<audio controls autoplay src="data:' + esc(a.mime) + ';base64,' + a.b64 + '" style="width:100%;margin-top:6px"></audio>'; pr.remove(); }
+    catch (e) { pr.disabled = false; pr.textContent = '▶ Play recording'; toast(e.message); }
+  };
+  const scoreEl = $('#ovScore'), noteEl = $('#ovNote');
+  let sv = null, nv = ''; if (scoreEl) { scoreEl.oninput = () => { sv = scoreEl.value; }; sv = scoreEl.value; noteEl.oninput = () => { nv = noteEl.value; }; nv = noteEl.value; }
+  const v = await p;
+  if (!v) return;
+  try {
+    const r = await api.api_adminSetScore(S.token, username, d.attempt.no, id, v === 'clear' ? null : (sv === '' ? null : Number(sv)), nv);
+    toast('Saved — total ' + r.pct + '%'); openDetail(username, d.attempt.no);
+  } catch (e) { toast(e.message); }
 }
 </script>
 </body>
