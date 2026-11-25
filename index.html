@@ -297,7 +297,8 @@ table.list tbody tr.click{cursor:pointer} table.list tbody tr.click:hover{backgr
         <div id="loginErr" class="err hidden"></div>
         <button id="loginBtn" class="btn primary" style="width:100%;margin-top:20px;padding:12px" type="submit">Sign in</button>
       </form>
-      <p class="hint" style="margin-top:18px">Use a laptop or desktop with Chrome or Edge. Trouble signing in? Contact Human Resources.</p>
+      <p style="margin:14px 0 0"><button type="button" class="btn sm ghost" id="forgotBtn" style="padding-left:0">Forgot your password?</button></p>
+      <p class="hint" style="margin-top:6px">Use a laptop or desktop with Chrome or Edge. Trouble signing in? Contact Human Resources.</p>
     </div>
   </div>
 </section>
@@ -323,6 +324,7 @@ table.list tbody tr.click{cursor:pointer} table.list tbody tr.click:hover{backgr
     <button class="btn sm" id="langBtn"title="Cambiar el idioma de las preguntas / Switch the language of the questions">Español</button>
     <span class="savest" id="saveSt"></span>
     <span class="timer" id="timer" role="timer" aria-label="Time remaining">--:--</span>
+    <button class="btn sm" id="signoutBtn" title="Sign out. The timer keeps running; sign in again to resume.">Sign out</button>
     <button class="btn primary" id="finishBtn">Finish</button>
   </header>
   <div class="prog" aria-hidden="true"><i id="progFill"></i></div>
@@ -799,8 +801,12 @@ $('#loginForm').addEventListener('submit', async e => {
   } catch (ex) { err.textContent = ex.message; err.classList.remove('hidden'); }
   finally { btn.disabled = false; btn.textContent = 'Sign in'; }
 });
-async function logout() {
-  if (S.inExam && !S.submitted) { toast('Finish the assessment before signing out.'); return; }
+async function logout(force) {
+  if (S.inExam && !S.submitted) {
+    if (!force && !await confirmBox('Sign out?', '<p style="margin:0">The timer <b>keeps running</b> while you are signed out. Sign in again with the same username and password to resume where you left off.</p>', 'Sign out', 'danger')) return;
+    try { await flush(); } catch (e) {}
+    logEv('signout', ''); clearInterval(S.timer); S.inExam = false;
+  }
   try { await api.api_logout(S.token); } catch (e) {}
   if (S.cam) S.cam.getTracks().forEach(t => t.stop());
   store.del('gc_token'); store.del('gc_role'); store.del('gc_name'); store.del('gc_username');
@@ -808,6 +814,25 @@ async function logout() {
   show('v-login');
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-act="logout"]'); if (b) logout(); });
+$('#signoutBtn').onclick = () => logout();
+/* forgot password: a code is emailed to the address on file; the password only changes after the code is proven */
+$('#forgotBtn').onclick = async () => {
+  // the modal removes its fields when closed, so the values are captured while it is open
+  const grab = (p, ids) => { const v = {}; ids.forEach(id => { const el = $('#' + id); v[id] = el ? el.value : ''; if (el) el.addEventListener('input', () => { v[id] = el.value; }); }); return v; };
+  const p1 = modal('<h3>Forgot your password?</h3><p class="muted" style="margin:0 0 6px">Enter your username. If it exists we email a 6-digit code to the address on file.</p><label for="fpU">Username</label><input id="fpU" type="text" autocapitalize="off" spellcheck="false" value="' + esc($('#lu').value.trim()) + '">',
+    [{ label: 'Cancel', value: null }, { label: 'Send code', value: 'ok', kind: 'primary' }]);
+  const f1 = grab(null, ['fpU']);
+  if (await p1 !== 'ok') return;
+  const user = f1.fpU.trim(); if (!user) return toast('Enter your username first.');
+  try { await api.api_forgotStart(user); } catch (e) { return toast(e.message, 6000); }
+  const p2 = modal('<h3>Enter the code</h3><p class="muted" style="margin:0 0 6px">If the account exists, a code was sent to its email (check spam). It is valid for 15 minutes.</p>' +
+    '<label for="fpC">6-digit code</label><input id="fpC" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8"><label for="fpP">New password</label><input id="fpP" type="password" autocomplete="new-password"><label for="fpP2">Repeat the new password</label><input id="fpP2" type="password" autocomplete="new-password"><div class="hint" style="margin-top:6px">At least 10 characters, with letters and numbers.</div>',
+    [{ label: 'Cancel', value: null }, { label: 'Change password', value: 'ok', kind: 'primary' }]);
+  const f2 = grab(null, ['fpC', 'fpP', 'fpP2']);
+  if (await p2 !== 'ok') return;
+  if (f2.fpP !== f2.fpP2) return toast('The passwords do not match.');
+  try { await api.api_forgotFinish(user, f2.fpC, f2.fpP); $('#lu').value = user; $('#lp').value = ''; toast('Password changed. Sign in with the new one.', 6000); } catch (e) { toast(e.message, 6000); }
+};
 function sessionLost() { store.del('gc_token'); S.token = null; S.inExam = false; show('v-login'); toast('Your session expired. Please sign in again.'); }
 function route() { S.role === 'admin' ? loadAdmin() : loadHome(); }
 /* company logo (uploaded by the admin in Settings); cached locally so it appears instantly */
