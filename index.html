@@ -2237,6 +2237,82 @@ async function srcContact(p, st, saved) {
   return null;
 }
 
+/* ====================================================================
+ *  CANDIDATE SEARCH PROVIDERS (DOM-free helpers; tools/ai-search-ui.test.js runs this block as written here).
+ *  The profile search is powered by the web search of the AI provider chosen in Settings (Claude or Gemini key): no extra paid service.
+ *  Brave and Google stay as optional providers. The "Search profiles" button is never disabled by the connection state: without a usable
+ *  provider a click shows srcNoProviderHtml() (go to Connections / use the manual links).
+ * ==================================================================== */
+/*SRCAI-PURE-START*/
+const SRC_AI_PROVIDERS = [['ai', 'AI web search with my Claude/Gemini key — no extra cost beyond your AI usage (recommended)'], ['brave', 'Brave Search API (separate paid service)'], ['google', 'Google Programmable Search (only if you already had one)']];
+const SRC_AI_CAP_MIN = 10, SRC_AI_CAP_MAX = 2000;
+function srcAiProvOf(c) { c = c || {}; return c.searchProvider === 'brave' || c.searchProvider === 'google' ? c.searchProvider : 'ai'; }   // what the select shows: the saved provider, 'ai' when nothing is saved
+function srcAiName(p) { return p === 'gemini' ? 'Gemini (Google)' : 'Claude (Anthropic)'; }
+function srcSearchReady(c) { return !!(c && c.searchConfigured); }
+function srcGoButtonHtml(busy) {   // never disabled by the connection state: only while a search of this page is running (busy === true)
+  return busy === true ? '<button class="btn primary" id="sGo" disabled aria-busy="true"><span class="spin"></span> Searching…</button>' : '<button class="btn primary" id="sGo">🔎 Search profiles</button>';
+}
+/* c = the search config the server sent, admin = the person may change the provider. With a Claude / Gemini key available the note says so (and an admin gets a one-click "Use AI web search"): the key is never "missing" then. */
+function srcNoProviderHtml(c, admin) {
+  const ai = !!(c && c.aiSearchAvailable);
+  const text = ai ? '<b>The selected search provider is not connected.</b> The ' + esc(srcAiName(c.aiSearchProvider)) + ' key saved in Settings can run the profile search instead, at no extra cost.' + (admin ? '' : ' Ask an admin to switch it to AI web search.')
+    : '<b>No search provider is ready yet.</b> Profile search uses the Claude or Gemini key saved in Settings (no extra service to pay for), or a Brave / Google key if you prefer. You can also skip the search and use the manual links.';
+  return '<div class="note" id="sNoProv" role="status" style="margin-top:12px">' + text +
+    '<div class="kv" style="margin-top:10px">' + (ai && admin ? '<button class="btn primary sm" id="sUseAi">Use AI web search</button>' : '') + '<button class="btn ' + (ai && admin ? '' : 'primary ') + 'sm" id="sConn">Go to Connections</button><button class="btn sm" id="sManual">Use manual links</button></div></div>';
+}
+/* why "Save and test" cannot run, in the words of the person's role (never "no key" when the AI key exists) */
+function srcNotReadyMsg(c, admin) {
+  c = c || {};
+  if (srcAiProvOf(c) === 'ai' || c.aiSearchAvailable) return c.aiSearchAvailable ? 'The search is not ready. Open the Search provider list and choose the AI web search.' : 'No Claude or Gemini key is saved yet. ' + (admin ? 'Add one in Settings (AI provider) first.' : 'Ask an admin to add it in Settings.');
+  return 'The search provider is not connected yet. ' + (admin ? 'Enter its key here and press Save and test.' : 'Ask an admin to connect it.');
+}
+/* next to the "n searches" count: how many AI searches the click uses and how many are left today (nothing for Brave / Google) */
+function srcAiLeftText(c, n) {
+  if (!c || !srcSearchReady(c) || srcAiProvOf(c) !== 'ai') return '';
+  const cap = Number(c.aiSearchDailyCap) || 0; if (!cap) return '';
+  const left = Math.max(0, cap - (Number(c.aiSearchUsedToday) || 0));
+  return ' · uses ' + n + ' of the ' + left + ' AI searches left today' + (left < n ? ' (only ' + left + ' will run)' : '');
+}
+function srcNoProviderError(msg) { return /connect a search|no (search|ai) provider|search is not configured|not configured/i.test(String(msg || '')); }
+function srcSearchHint(c) {
+  return srcSearchReady(c) && srcAiProvOf(c) === 'ai' ? 'Search is done by the AI web search of ' + srcAiName(c.aiSearchProvider) + '. Results are public web pages found by the AI: open each one and confirm it yourself. No site is scraped or automated.' : '';
+}
+function srcCapOk(v) { const s = String(v == null ? '' : v).trim(); return /^\d{1,4}$/.test(s) && Number(s) >= SRC_AI_CAP_MIN && Number(s) <= SRC_AI_CAP_MAX; }
+function srcChipHtml(on, yes, no) { return '<span class="chip ' + (on ? 'ok' : 'warn') + '">' + esc(on ? yes : no) + '</span>'; }
+function srcAiUsedLine(c) {
+  const used = Number(c && c.aiSearchUsedToday) || 0, cap = Number(c && c.aiSearchDailyCap) || 0;
+  return '<p class="hint" id="cUsed" style="margin:10px 0 0">AI searches today: <b>' + used + ' / ' + (cap || '—') + '</b>. Each search of a place and a source counts as one.</p>';
+}
+/* the part of the card that depends on the provider: the token fields exist only for Brave and Google */
+function srcConnFieldsHtml(prov, c, admin) {
+  c = c || {};
+  if (prov !== 'ai' && !admin) {   // HR cannot read or change keys: only whether the provider is connected
+    return '<p class="hint" style="margin:10px 0 0">' + (prov === 'google' ? 'Google Programmable Search' : 'Brave Search') + ': <b>' + ((prov === 'google' ? c.googleSearchConfigured : c.braveConfigured) ? 'connected' : 'not connected') + '</b>. Only an admin can change the keys.</p>';
+  }
+  if (prov === 'ai') {
+    const nm = esc(srcAiName(c.aiSearchProvider));
+    return (c.aiSearchAvailable ? '<p class="hint" style="margin:10px 0 0">Uses the <b>' + nm + '</b> key already saved in Settings. Results are public web pages found by the AI; a person opens each one and confirms it. No site is scraped or automated.</p>' :
+      '<div class="note" style="margin-top:10px">No Claude or Gemini key is saved yet. ' + (admin ? 'Add one in <b>Settings</b> (AI provider) and this search works at once.<div class="kv" style="margin-top:8px"><button class="btn sm" id="cSet">Open Settings</button></div>' : 'Ask an admin to add it in Settings.') + '</div>') +
+      srcAiUsedLine(c) +
+      (admin ? '<label for="cCap">Daily limit of AI searches <span class="hint">(' + SRC_AI_CAP_MIN + ' to ' + SRC_AI_CAP_MAX + ', shared with Market Research)</span></label><input id="cCap" type="number" inputmode="numeric" min="' + SRC_AI_CAP_MIN + '" max="' + SRC_AI_CAP_MAX + '" step="1" value="' + esc(Number(c.aiSearchDailyCap) || 150) + '">' :
+        '<p class="hint" style="margin:6px 0 0">An admin sets the daily limit.</p>');
+  }
+  if (prov === 'google') {
+    return '<div id="cG"><label for="cGK">Google API key</label><input id="cGK" type="password" autocomplete="off" placeholder="' + (c.googleSearchConfigured ? 'Saved ✓ (type a new one to replace it)' : 'AIza…') + '"><label for="cGX">Search engine ID (cx)</label><input id="cGX" type="text" autocomplete="off" placeholder="' + (c.googleSearchConfigured ? 'Saved ✓' : 'e.g. 0123456789abcdef:ghi') + '">' +
+      '<p class="hint" style="margin:8px 0 0">Use this only if you already had a Google engine: Google closed new engines on 2026-01-20 and ends the Custom Search API on 2027-01-01. The AI web search needs no key of this kind.</p><details><summary>How to get them</summary><ol><li>Open <b>programmablesearchengine.google.com</b> → Add → choose <b>Search the entire web</b> → copy the <b>Search engine ID</b>.</li><li>In <b>console.cloud.google.com</b> enable <b>Custom Search API</b> and create an <b>API key</b>.</li><li>Paste both here and press Save and test.</li></ol></details></div>';
+  }
+  return '<div id="cB"><label for="cBK">Brave Search API token</label><input id="cBK" type="password" autocomplete="off" placeholder="' + (c.braveConfigured ? 'Saved ✓ (type a new one to replace it)' : 'BSA…') + '"><details open><summary>How to get it</summary><ol><li>Create an account at <b>api-dashboard.search.brave.com</b> and subscribe to the plan <b>Search</b> (a separate paid service; the AI web search needs none).</li><li>It costs about USD 5 per 1,000 searches, with a monthly credit (check current prices on Brave’s site).</li><li>Create an API key in the dashboard, copy it and paste it here, then press Save and test.</li></ol></details></div>';
+}
+function srcConnCardHtml(c, admin) {
+  c = c || {}; const prov = srcAiProvOf(c), on = prov === 'ai' ? !!c.aiSearchAvailable : !!c.searchConfigured;
+  return '<div class="card" id="cSearchCard"><h3>Candidate search <span id="cChip">' + (prov === 'ai' ? srcChipHtml(on, 'Ready', 'Not ready') : srcChipHtml(on, 'Connected', 'Not connected')) + '</span></h3>' +
+    '<p class="hint" style="margin:6px 0 0">Lists public profiles (LinkedIn, Upwork, Workana, XING, GitHub…) found with a web search. Results are public web pages: a person opens each one and confirms it. Keys are stored only on the server and are never shown again.</p>' +
+    '<label for="cProv">Search provider</label><select id="cProv"' + (admin ? '' : ' disabled aria-describedby="cProvNote"') + '>' + SRC_AI_PROVIDERS.map(p => '<option value="' + p[0] + '"' + (p[0] === prov ? ' selected' : '') + '>' + esc(p[1]) + '</option>').join('') + '</select>' + (admin ? '' : '<p class="hint" id="cProvNote" style="margin:6px 0 0">Only an admin can change the provider.</p>') +
+    '<div id="cFields">' + srcConnFieldsHtml(prov, c, admin) + '</div>' +
+    '<div id="cErr" class="err hidden"></div><div class="kv" style="margin-top:12px"><button class="btn primary" id="cSave">' + (admin ? 'Save and test' : 'Test the connection') + '</button>' + (admin && (c.googleSearchConfigured || c.braveConfigured) ? '<button class="btn danger" id="cClear">Remove keys</button>' : '') + '</div></div>';
+}
+/*SRCAI-PURE-END*/
+
 async function renderSourcing(body, live = () => true) {
   const mods = await getMods(); if (!live()) return;
   if (!ADM.cfg) { try { ADM.cfg = await api.api_adminConfig(S.token); } catch (e) { try { ADM.cfg = { search: (await api.api_adminConnections(S.token)).search || {} }; } catch (x) { ADM.cfg = { search: {} }; } }   /* HR cannot read the settings, but can see whether the search is connected */ if (!live()) return; }
@@ -2273,7 +2349,7 @@ async function renderSourcing(body, live = () => true) {
   }
   function tabSearch() {
     if (!st.titles) fillArea(true);
-    const a = A(), conn = (ADM.cfg.search || {}).searchConfigured;
+    const a = A(), hint0 = srcSearchHint(ADM.cfg.search);
     box.innerHTML = '<div class="src-layout"><div class="card src-form"><h3>Search profile</h3>' +
       '<label for="sArea">Area of interest</label><select id="sArea">' + SRC.areas.map(x => '<option value="' + esc(x.key) + '">' + esc(x.es) + ' · ' + esc(x.en) + '</option>').join('') + '</select>' +
       '<label>Cities and ports <span class="hint">(several allowed; none = worldwide)</span></label><div class="src-chips" id="sLocs"></div>' +
@@ -2288,8 +2364,8 @@ async function renderSourcing(body, live = () => true) {
       '<div class="src-row"><div><label for="sCon">Contract</label><select id="sCon">' + opt(T.contractTypes, x => x.en) + '</select></div><div><label for="sMode">Work mode</label><select id="sMode">' + opt(T.workModes, x => x.en) + '</select></div>' +
       '<div><label for="sExp">Experience</label><select id="sExp">' + opt(T.experience, x => x.en) + '</select></div><div><label for="sAv">Availability</label><select id="sAv">' + opt(T.availability, x => x.en) + '</select></div></div>' +
       '<h4>Where to look</h4><div class="src-chips" id="sSrc"></div><div class="src-row" style="margin-top:10px"><div><label for="sQL">Titles in</label><select id="sQL"><option value="both">Spanish + English</option><option value="es">Spanish</option><option value="en">English</option></select></div></div></div>' +
-      '<div><div class="card"><div class="src-go"><button class="btn primary" id="sGo"' + (conn ? '' : ' disabled') + '>🔎 Search profiles</button><span class="hint" id="sCount"></span></div>' +
-      (conn ? '' : '<p class="hint" style="margin:10px 0 0">Connect a search provider in <button class="btn sm ghost" id="sConn" style="padding:0 2px;text-decoration:underline">Connections</button> to list profiles.</p>') +
+      '<div><div class="card"><div class="src-go">' + srcGoButtonHtml(st.searching === true) + '<button class="btn" id="sGoogle" title="Opens the search in Google in a new tab. No key and no connection needed: you read and open the profiles yourself.">↗ Open in Google</button><span class="hint" id="sCount"></span></div><div id="sNoProvBox"></div>' +
+      (hint0 ? '<p class="hint" id="sAiHint" style="margin:10px 0 0">' + esc(hint0) + '</p>' : '') +
       '<div id="sRes"></div></div><div class="card" style="margin-top:14px"><div class="toolbar" style="margin:0 0 6px"><h3>Boolean string</h3><span class="sp"></span><button class="btn sm" id="sCopyB">Copy</button></div><div class="hint">For LinkedIn Recruiter, CV databases and job-board search boxes.</div><div class="src-q" id="sBool" style="font:13px/1.5 ui-monospace,Consolas,monospace;background:var(--code-bg);color:var(--code-ink);padding:10px 12px;border-radius:var(--r-sm);white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto;margin-top:6px"></div></div></div></div>';
     const $s = id => $('#' + id, box);
     const sync = () => {
@@ -2322,7 +2398,8 @@ async function renderSourcing(body, live = () => true) {
     const plan = () => { const P = srcPieces(st), locs = P.locs.length ? P.locs : [null], srcs = SRC_SOURCES.filter(s => st.sources[s.key]); return { P, locs, srcs, n: locs.length * srcs.length }; };
     const info = () => {
       const pl = plan(), P = pl.P; $s('sBool').textContent = srcBoolean(st, P) || '(add a job title)';
-      $s('sCount').textContent = pl.n + ' search' + (pl.n === 1 ? '' : 'es') + ' (' + pl.locs.length + ' place' + (pl.locs.length === 1 ? '' : 's') + ' × ' + pl.srcs.length + ' source' + (pl.srcs.length === 1 ? '' : 's') + ')' + (pl.n > SRC_MAX_QUERIES ? ' — only the first ' + SRC_MAX_QUERIES + ' run' : '');
+      const gb = $s('sGoogle'); if (gb) gb.textContent = '↗ Open in Google' + (pl.n > 1 ? ' (' + (((st.gIdx || 0) % pl.n) + 1) + '/' + pl.n + ')' : '');
+      $s('sCount').textContent = pl.n + ' search' + (pl.n === 1 ? '' : 'es') + ' (' + pl.locs.length + ' place' + (pl.locs.length === 1 ? '' : 's') + ' × ' + pl.srcs.length + ' source' + (pl.srcs.length === 1 ? '' : 's') + ')' + (pl.n > SRC_MAX_QUERIES ? ' — only the first ' + SRC_MAX_QUERIES + ' run' : '') + srcAiLeftText(ADM.cfg.search, Math.min(pl.n, SRC_MAX_QUERIES));
     };
     const resMatch = () => { const q = srtQ('src-res'); return (st.results || []).filter(r => (!st.locFilter || r.loc === st.locFilter) && srtMatch(q, [r.name, r.headline, r.snippet, r.location, r.loc, r.sourceLabel, r.email, r.phone])); };
     const RES_COLS = [null, 'num', 'text', 'text', 'text', 'text', null], RES_VAL = [null, r => r.score, r => r.name, r => r.headline, r => r.location, r => r.sourceLabel];
@@ -2383,23 +2460,49 @@ async function renderSourcing(body, live = () => true) {
       if (found.missing) toast(found.missing + ' of them could not be saved (do-not-contact or invalid) and were left out.', 6000);
       await ouEnrollDialog(found.ids, found.names);
     }
-    async function go() {
+    /* no usable provider: the button stays enabled and a click explains it (the cached state is re-checked first, a key may have been added meanwhile) */
+    let noProv = false;
+    const showNoProv = on => { const h = $s('sNoProvBox'); if (h) h.innerHTML = on ? srcNoProviderHtml(ADM.cfg.search, isAdminRole()) : ''; };
+    async function ensureProvider() {
+      if (srcSearchReady(ADM.cfg.search)) return true;
+      try { ADM.cfg.search = (await api.api_adminConnections(S.token)).search || {}; } catch (e) { if (isSessionErr(e)) { sessionLost(); return false; } }
+      if (st.tab !== 'search') return false;
+      if (srcSearchReady(ADM.cfg.search)) { $('#srcTabs', body).outerHTML = tabsHtml(); showNoProv(false); return true; }
+      showNoProv(true); return false;
+    }
+    /* no key needed: opens ONE Google search per click (the next one on the next click), so the browser never blocks a burst of pop-ups and the person reads each result page */
+    function openGoogle() {
       const pl = plan(); if (!pl.P.titles.length) return toast('Add at least one job title.');
       if (!pl.srcs.length) return toast('Choose at least one source.');
+      const qs = []; pl.locs.forEach(l => pl.srcs.forEach(s => qs.push(srcQuery(st, pl.P, l, s))));
+      const i = (st.gIdx || 0) % qs.length; st.gIdx = i + 1;
+      window.open('https://www.google.com/search?q=' + encodeURIComponent(qs[i]), '_blank', 'noopener,noreferrer');
+      toast('Opened Google search ' + (i + 1) + ' of ' + qs.length + (qs.length > 1 ? '. Press the button again for the next one.' : '.')); info();
+    }
+    async function go() {
+      if (st.searching) return toast('A search is already running: wait for it to finish.');   // the button of a redrawn tab is disabled too; each click would be paid AI calls
+      noProv = false;
+      const pl = plan(); if (!pl.P.titles.length) return toast('Add at least one job title.');
+      if (!pl.srcs.length) return toast('Choose at least one source.');
+      if (!await ensureProvider()) return;
       const qs = []; pl.locs.forEach(l => pl.srcs.forEach(s => qs.push({ q: srcQuery(st, pl.P, l, s), source: s.key, loc: l ? srcLocName(l) : 'Worldwide' })));
-      const btn = $s('sGo'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Searching…';
+      st.searching = true; const my = (st.reqId = (st.reqId || 0) + 1), done = () => { if (my === st.reqId) st.searching = false; };
+      const btn = $s('sGo'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Searching…'; showNoProv(false);
       const terms = srcTerms(pl.P), ports = pl.P.locs.flatMap(l => [l.variants[0], srcLocName(l)]);
       // the internal directory (e.g. the port benchmarking contacts) is searched together with the web
       const dirP = (ADM.dirStats && ADM.dirStats.length ? api.api_adminDirectorySearch(S.token, { ports, terms, minScore: 30, limit: 100 }) : Promise.resolve({ results: [] })).catch(() => ({ results: [] }));
       try {
         const r = await api.api_adminSourcingSearch(S.token, { queries: qs.slice(0, SRC_MAX_QUERIES), terms }), d = await dirP;
-        st.results = d.results.map(srcFromDir).concat(r.results).sort((a, b) => b.score - a.score); st.errors = r.errors || []; st.locFilter = ''; st.sel = new Set();
+        if (typeof r.remaining_today === 'number' && ADM.cfg.search && Number(ADM.cfg.search.aiSearchDailyCap)) ADM.cfg.search.aiSearchUsedToday = Math.max(0, Number(ADM.cfg.search.aiSearchDailyCap) - r.remaining_today);   // the "left today" figure follows the server
+        if (my === st.reqId) { st.results = d.results.map(srcFromDir).concat(r.results).sort((a, b) => b.score - a.score); st.errors = r.errors || []; st.locFilter = ''; st.sel = new Set(); }
       }
       catch (e) {
-        if (isSessionErr(e)) return sessionLost(); st.errors = [e.message]; const d = await dirP; st.results = d.results.map(srcFromDir).sort((a, b) => b.score - a.score); st.sel = new Set();
-        if (/Connect a search API/.test(e.message)) { ADM.cfg.search = {}; }
+        done(); if (isSessionErr(e)) return sessionLost(); st.errors = [e.message]; const d = await dirP; st.results = d.results.map(srcFromDir).sort((a, b) => b.score - a.score); st.sel = new Set();
+        if (srcNoProviderError(e.message)) { ADM.cfg.search = Object.assign({}, ADM.cfg.search, { searchConfigured: false }); st.errors = []; noProv = true; }   // the AI flags stay: the note can offer the AI key that exists
       }
-      if (st.tab !== 'search') return; btn.disabled = false; btn.textContent = '🔎 Search profiles'; drawRes();
+      done();
+      if (st.tab !== 'search') return;   // the results stay in the state: the Search tab shows them when it is opened again
+      const b2 = $s('sGo'); if (b2) { b2.disabled = false; b2.textContent = '🔎 Search profiles'; } drawRes(); info(); showNoProv(noProv);
     }
     box.onchange = e => {
       const t = e.target;
@@ -2427,7 +2530,13 @@ async function renderSourcing(body, live = () => true) {
       const g = id => e.target.closest(id);
       let el;
       if (g('#sGo')) go();
+      else if (g('#sGoogle')) openGoogle();
+      else if (g('#sUseAi')) {
+        try { ADM.cfg = await api.api_adminConfig(S.token, { searchProvider: 'ai' }); } catch (x) { if (isSessionErr(x)) return sessionLost(); return toast(x.message, 6000); }
+        $('#srcTabs', body).outerHTML = tabsHtml(); showNoProv(false); info(); toast('AI web search selected'); if (srcSearchReady(ADM.cfg.search)) go();
+      }
       else if (g('#sConn')) { st.tab = 'conn'; $('#srcTabs', body).outerHTML = tabsHtml(); draw(); }
+      else if (g('#sManual')) { st.tab = 'links'; $('#srcTabs', body).outerHTML = tabsHtml(); draw(); }
       else if (g('#sCopyB')) srcCopy($s('sBool').textContent, 'Boolean string copied');
       else if ((el = g('[data-lx]'))) { st.locs = st.locs.filter(k => k !== el.dataset.lx); drawLocs(); info(); }
       else if ((el = g('[data-s]'))) { st.sources[el.dataset.s] = !st.sources[el.dataset.s]; if (!Object.values(st.sources).some(Boolean)) st.sources[el.dataset.s] = true; drawSrc(); info(); }
@@ -2645,38 +2754,48 @@ async function renderSourcing(body, live = () => true) {
     if (!live() || st.tab !== 'conn') return;
     const linkLocked = !!mcfg && mcfg.configured === false;
     const outMail = oset ? '<p class="hint" style="margin:8px 0 0">Outreach emails sent today by you: <b>' + (Number(oset.emailsToday) || 0) + ' / ' + (Number(oset.emailCap) || 30) + '</b> (your daily cap). Email steps of your sequences go out automatically between ' + esc(oset.hoursStart || '08:00') + ' and ' + esc(oset.hoursEnd || '18:00') + ', within that cap. <button class="btn sm" id="cOu" style="margin-left:4px">Outreach settings</button></p>' : '';
-    const c = C.search || {}, prov = c.searchProvider === 'google' && c.googleSearchConfigured ? 'google' : 'brave', cfgPatch = ADM.cfg = Object.assign(ADM.cfg || {}, { search: c });
+    const c = C.search || {}, admin = isAdminRole(); ADM.cfg = Object.assign(ADM.cfg || {}, { search: c });
     const chip = (on, yes = 'Connected', no = 'Not connected') => '<span class="chip ' + (on ? 'ok' : 'warn') + '">' + (on ? yes : no) + '</span>';
     const calChip = C.calendar.ok && C.calendar.canWrite === false ? '<span class="chip warn">Read only</span>' : chip(C.calendar.ok);
-    box.innerHTML = '<div class="note" style="margin-bottom:14px">Connections work like the connectors of Claude: <b>nobody types a password into this tool</b>. Drive and email use the Google account that owns it, which grants permission once on Google’s own screen. Each recruiter shares their own Google Calendar with that account once (no password involved). Search uses a key you create yourself.</div>' +
-      '<div class="src-conn"><div class="card"><h3>Candidate search ' + chip(c.searchConfigured) + '</h3><p class="hint" style="margin:6px 0 0">Lists public profiles (LinkedIn, Upwork, Workana, XING, GitHub…) through an official search API. Keys are stored only on the server and are never shown again.</p>' +
-      '<label for="cProv">Search provider</label><select id="cProv"><option value="brave"' + (prov === 'brave' ? ' selected' : '') + '>Brave Search API (recommended)</option><option value="google"' + (prov === 'google' ? ' selected' : '') + '>Google Programmable Search (only if you already had one)</option></select>' +
-      '<div id="cG"><label for="cGK">Google API key</label><input id="cGK" type="password" autocomplete="off" placeholder="' + (c.googleSearchConfigured ? 'Saved ✓ (type a new one to replace it)' : 'AIza…') + '"><label for="cGX">Search engine ID (cx)</label><input id="cGX" type="text" autocomplete="off" placeholder="' + (c.googleSearchConfigured ? 'Saved ✓' : 'e.g. 0123456789abcdef:ghi') + '">' +
-      '<p class="hint" style="margin:8px 0 0">Use this only if you already had a Google engine: Google closed new engines on 2026-01-20 and ends the Custom Search API on 2027-01-01. New setups should use Brave.</p><details><summary>How to get them</summary><ol><li>Open <b>programmablesearchengine.google.com</b> → Add → choose <b>Search the entire web</b> → copy the <b>Search engine ID</b>.</li><li>In <b>console.cloud.google.com</b> enable <b>Custom Search API</b> and create an <b>API key</b>.</li><li>Paste both here and press Save and test.</li></ol></details></div>' +
-      '<div id="cB" class="hidden"><label for="cBK">Brave Search API token</label><input id="cBK" type="password" autocomplete="off" placeholder="' + (c.braveConfigured ? 'Saved ✓ (type a new one to replace it)' : 'BSA…') + '"><details open><summary>How to get it</summary><ol><li>Create an account at <b>api-dashboard.search.brave.com</b> and subscribe to the plan <b>Search</b>.</li><li>It costs about USD 5 per 1,000 searches, with a monthly credit (check current prices on Brave’s site).</li><li>Create an API key in the dashboard, copy it and paste it here, then press Save and test.</li></ol></details></div>' +
-      '<div id="cErr" class="err hidden"></div><div class="kv" style="margin-top:12px"><button class="btn primary" id="cSave">Save and test</button>' + (c.googleSearchConfigured || c.braveConfigured ? '<button class="btn danger" id="cClear">Remove keys</button>' : '') + '</div></div>' +
+    box.innerHTML = '<div class="note" style="margin-bottom:14px">Connections work like the connectors of Claude: <b>nobody types a password into this tool</b>. Drive and email use the Google account that owns it, which grants permission once on Google’s own screen. Each recruiter shares their own Google Calendar with that account once (no password involved). Candidate search uses the Claude or Gemini key already saved in Settings (a Brave or Google key is optional).</div>' +
+      '<div class="src-conn">' + srcConnCardHtml(c, admin) +
       '<div class="card"><h3>My Google Calendar ' + calChip + '</h3><p class="hint" style="margin:6px 0 0">' + (C.calendar.ok ? 'Reading <b>' + esc(C.calendar.name) + '</b> (' + esc(C.tz) + ').' + (C.calendar.canWrite === false ? ' It is <b>read-only</b> for this tool: share it with “Make changes to events” so accepted meetings can be added.' : C.calendar.canWrite === true ? ' Candidates only see times when you are free, and accepted meetings are added with an invitation.' : ' Press <b>Check my calendar</b> to confirm that meetings can be added.') : 'Your calendar is not available yet: ' + esc(C.calendar.error || 'it has not been shared with this tool') + '. Share it with ' + mtOwnerHtml(C.ownerEmail) + ' (<b>Make changes to events</b>) and press Check my calendar.' + (isAdminRole() ? ' If you own this tool, also run <b>authorizeServices</b> once in the Apps Script editor.' : '')) + ' This card is about <b>your</b> calendar only; each recruiter sets up their own in Meetings.</p>' +
       '<div class="kv" style="margin-top:12px"><button class="btn primary" id="cCheck">Check my calendar</button><button class="btn" id="cRe">Refresh</button><button class="btn" id="cMeet">Set my availability</button></div><div id="cCalOut" style="margin-top:10px"></div>' + mtStepsHtml(C.ownerEmail) + '</div>' +
       '<div class="card"><h3>Google Drive (resumes) ' + chip(C.drive.ok) + '</h3><p class="hint" style="margin:6px 0 0">Resumes uploaded through a candidate’s scheduling link are stored in a private Drive folder only you can open.' + (C.drive.ok ? '' : ' Run <b>authorizeServices</b> in the Apps Script editor to grant access.') + '</p></div>' +
       '<div class="card"><h3>Email ' + chip(C.mail.ok, 'Ready' + (C.mail.remaining != null ? ' · ' + C.mail.remaining + ' left today' : ''), 'Not authorized') + '</h3><p class="hint" style="margin:6px 0 0">Messages and scheduling links go out from the company Google account, when you press <b>Send</b>. Replies go to the HR email of Settings.</p>' + outMail + '</div>' +
       '<div class="card"><h3>My meeting link (Teams / Meet) ' + chip(!!C.meetLink, 'Set', 'Optional') + '</h3><label for="cML" style="margin-top:8px">Link included in the meetings booked with you</label><input id="cML" type="text" placeholder="https://teams.microsoft.com/…" value="' + esc(C.meetLink || '') + '"' + (linkLocked ? ' disabled' : '') + '>' + (linkLocked ? '<div class="note" style="margin-top:10px">You are not set up for meetings yet. Choose your hours and calendar in <b>Set my availability</b> first (your meeting link is there too); saving only a link here would not make you available.</div>' : '') + '<div class="kv" style="margin-top:12px"><button class="btn" id="cMLs"' + (linkLocked ? ' disabled' : '') + '>Save link</button></div></div>' +
       '<div class="card"><h3>LinkedIn Recruiter ' + chip(false, '', 'Not available') + '</h3><p class="hint" style="margin:6px 0 0">There is no field for LinkedIn credentials on purpose: LinkedIn only gives API access to approved partners, and it does not allow bots that search, scrape or message. Use <b>Open ↗</b> on a profile and write from your own LinkedIn account, or copy the Boolean string into Recruiter.</p></div></div>';
-    const prov2 = () => { const p = $('#cProv', box).value; $('#cG', box).classList.toggle('hidden', p !== 'google'); $('#cB', box).classList.toggle('hidden', p !== 'brave'); }; prov2();
-    box.onchange = e => { if (e.target.id === 'cProv') prov2(); };
+    const val = id => { const el = $('#' + id, box); return el ? el.value.trim() : ''; };   // the token fields exist only for Brave / Google
+    box.onchange = e => { if (e.target.id === 'cProv') { $('#cFields', box).innerHTML = srcConnFieldsHtml(e.target.value, c, admin); $('#cErr', box).classList.add('hidden'); } };
     box.onclick = async e => {
       const err = $('#cErr', box);
       if (e.target.closest('#cSave')) {
-        err.classList.add('hidden'); const p = $('#cProv', box).value, btn = $('#cSave', box); btn.disabled = true;
+        err.classList.add('hidden'); const sel = $('#cProv', box).value, btn = $('#cSave', box); btn.disabled = true;
         try {
-          ADM.cfg = await api.api_adminConfig(S.token, { searchProvider: p, googleKey: $('#cGK', box).value.trim() || null, googleCx: $('#cGX', box).value.trim() || null, braveKey: $('#cBK', box).value.trim() || null });
-          if (!ADM.cfg.search.searchConfigured) throw new Error(p === 'google' ? 'Enter the API key and the search engine ID.' : 'Enter the Brave token.');
-          const t = await api.api_adminSearchTest(S.token); toast('Connected ✓ (' + t.sample + ' test results)', 5000);
+          let p = sel;
+          if (!admin) {   // HR cannot change the provider or the keys: the connection that is really in use is tested (never "the AI was tested" when it was another provider)
+            ADM.cfg.search = (await api.api_adminConnections(S.token)).search || {}; p = srcAiProvOf(ADM.cfg.search);
+            if (!srcSearchReady(ADM.cfg.search)) throw new Error(srcNotReadyMsg(ADM.cfg.search, false));
+          } else if (p === 'ai') {   // no token to type: the Claude / Gemini key of Settings is used. Only an admin can change the provider and the daily limit.
+            const patch = { searchProvider: 'ai' };
+            const cap = val('cCap'); if (!srcCapOk(cap)) throw new Error('The daily limit must be a whole number from ' + SRC_AI_CAP_MIN + ' to ' + SRC_AI_CAP_MAX + '.'); patch.aiSearchCap = Number(cap); ADM.cfg = await api.api_adminConfig(S.token, patch);
+            if (!srcSearchReady(ADM.cfg.search)) throw new Error(srcNotReadyMsg(ADM.cfg.search, true));
+          } else {
+            // the provider is switched ONLY when its key is typed or already saved: choosing Brave / Google with an empty token must not leave a provider with no key behind
+            const gk = val('cGK'), gx = val('cGX'), bk = val('cBK');
+            const have = p === 'google' ? (gk || c.googleSearchConfigured) && (gx || c.googleSearchConfigured) : (bk || c.braveConfigured);
+            if (!have) throw new Error(p === 'google' ? 'Enter the API key and the search engine ID.' : 'Enter the Brave token.');
+            ADM.cfg = await api.api_adminConfig(S.token, { searchProvider: p, googleKey: gk || null, googleCx: gx || null, braveKey: bk || null });
+            if (!ADM.cfg.search.searchConfigured) throw new Error(p === 'google' ? 'Enter the API key and the search engine ID.' : 'Enter the Brave token.');
+          }
+          const t = await api.api_adminSearchTest(S.token); toast((srcAiProvOf(ADM.cfg.search) === 'ai' ? 'Ready ✓ (AI web search returned ' : 'Connected ✓ (') + t.sample + ' test results)', 5000);
           st.tab = 'search'; $('#srcTabs', body).outerHTML = tabsHtml(); draw();
         } catch (x) { if (isSessionErr(x)) return sessionLost(); err.textContent = x.message; err.classList.remove('hidden'); btn.disabled = false; $('#srcTabs', body).outerHTML = tabsHtml(); }
       } else if (e.target.closest('#cClear')) {
         if (!await confirmBox('Remove the search keys?', '<p style="margin:0">Profile search stops working until you connect again.</p>', 'Remove', 'danger')) return;
-        try { ADM.cfg = await api.api_adminConfig(S.token, { googleSearchClear: true, braveClear: true }); toast('Keys removed'); $('#srcTabs', body).outerHTML = tabsHtml(); tabConn(); } catch (x) { toast(x.message); }
-      } else if (await mtCopyClick(e)) return;
+        try { ADM.cfg = await api.api_adminConfig(S.token, Object.assign({ googleSearchClear: true, braveClear: true }, c.aiSearchAvailable ? { searchProvider: 'ai' } : {})); toast('Keys removed'); $('#srcTabs', body).outerHTML = tabsHtml(); tabConn(); } catch (x) { toast(x.message); }
+      } else if (e.target.closest('#cSet')) { ADM.tab = 'settings'; renderAdmin(); }
+      else if (await mtCopyClick(e)) return;
       else if (e.target.closest('#cCheck')) { const btn = $('#cCheck', box); btn.disabled = true; try { await mtCalCheck($('#cCalOut', box), '', C.ownerEmail); } finally { btn.disabled = false; } }
       else if (e.target.closest('#cOu')) ouGo('settings');
       else if (e.target.closest('#cRe')) tabConn();
@@ -6010,7 +6129,10 @@ window.addEventListener('hashchange', () => {
     '.mr-item small{color:var(--muted)}.mr-draft{width:100%;min-height:260px;font:14px/1.5 inherit}' +
     '.mr-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}' +
     '.mr-file{margin-top:8px}.mr-prog{margin-top:14px}.mr-prog .track{height:12px}.mr-chk{display:flex;gap:10px;align-items:flex-start;font-weight:400;margin:10px 0 0}.mr-chk input{width:auto;margin-top:4px}.mr-chk small{display:block;color:var(--muted)}' +
-    '.mr-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px}';
+    '.mr-pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px}' +
+    '.mr-ai{margin:0 0 14px}.mr-ai-list{display:grid;gap:10px}.mr-ai-card{border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;background:var(--panel);display:grid;gap:6px;min-width:0}.mr-ai-card:focus{outline:2px solid var(--brand-2);outline-offset:2px}' +
+    '.mr-ai-card.blocked{background:var(--soft);border-style:dashed}.mr-ai-card.blocked .mr-ai-h b{color:var(--muted)}.mr-ai-h{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-width:0}.mr-ai-h b,.mr-ai-h .chip{min-width:0;max-width:100%;overflow-wrap:anywhere}.chip.mr-ind{border-style:dashed}.mr-ai-body{font-size:13.5px;display:grid;gap:3px;min-width:0;overflow-wrap:anywhere}.mr-ai-why{margin:0;font-size:13.5px}' +
+    '.mr-ai-rates h5{margin:6px 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}.mr-ai-rates ul{margin:0;padding-left:18px}.mr-ai-act{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.mr-ai-banner{margin:4px 0}';
   document.head.appendChild(s);
 })();
 
@@ -6048,7 +6170,7 @@ function mrFit(text, px, charPx) {   // label cut to the width it has (an estima
   return text.length <= max ? text : text.slice(0, max - 1).replace(/\s+$/, '') + '…';
 }
 /* friendly names for the Spanish values of the Excel (the original text stays in the tooltip and in the CSV) */
-function mrCatLabel(c) { const n = mrNorm(c); return /^transporte/.test(n) ? 'Transport' : /guia/.test(n) ? 'Official guide' : String(c || ''); }
+function mrCatLabel(c) { const n = mrNorm(c); return /^transporte/.test(n) ? 'Transport' : /guia/.test(n) ? 'Official guide' : /^conductor/.test(n) ? 'Driver' : /^alquiler/.test(n) ? 'Car rental' : /^transfer$/.test(n) ? 'Transfer' : /^agencia/.test(n) ? 'Tour agency' : String(c || ''); }
 function mrUnitLabel(u) {
   const n = mrNorm(u); if (!n) return '';
   if (/half.?day|medio dia|\b4\s?h\b/.test(n)) return 'Half day (4 h)';
@@ -6112,11 +6234,14 @@ function mrSupplierCheck(s) {
 /* the fields of the form that differ from the supplier as loaded: only those are sent, so two people editing different fields never overwrite each other with stale values */
 function mrSupplierDiff(orig, vals) {
   const out = {}, o = orig || {}, v = vals || {};
-  MR_SUP_FIELDS.map(f => f[0]).concat(['notes']).forEach(k => { if (String(o[k] == null ? '' : o[k]) !== String(v[k] == null ? '' : v[k])) out[k] = v[k] == null ? '' : v[k]; });
+  MR_SUP_FIELDS.map(f => f[0]).concat(['notes', 'entity']).forEach(k => { if (String(o[k] == null ? '' : o[k]) !== String(v[k] == null ? '' : v[k])) out[k] = v[k] == null ? '' : v[k]; });
   return out;
 }
 /* the text typed in the category filter, in the words the Excel uses (the server matches by contained text, without accents or case) */
-function mrCatFilter(v) { const t = String(v == null ? '' : v).trim(), n = mrNorm(t); return /^(official )?guides?$/.test(n) ? 'guia' : t; }
+/* English words of the category list -> [the word the server matches (contained text, no accents), the category as saved] */
+const MR_CAT_SYN = [[/^(official )?guides?$/, 'guia', 'Guía Oficial'], [/^drivers?$/, 'conductor', 'Conductor'], [/^((car|vehicle) )?rentals?$/, 'alquiler', 'Alquiler de vehículos'], [/^(tour |receptive )?agenc(y|ies)$/, 'agencia', 'Agencia receptiva']];
+function mrCatFilter(v) { const t = String(v == null ? '' : v).trim(), n = mrNorm(t), x = MR_CAT_SYN.find(y => y[0].test(n)); return x ? x[1] : t; }
+function mrCatCanon(v) { const t = String(v == null ? '' : v).trim(), n = mrNorm(t), x = MR_CAT_SYN.find(y => y[0].test(n)); return x ? x[2] : t; }
 function mrGuessLang(country) { return /colombia|mexico|peru|chile|argentina|espana|spain|panama|costa rica|ecuador|uruguay|dominican|republica dominicana|guatemala|honduras|bolivia|paraguay|venezuela|cuba|nicaragua|el salvador|puerto rico/.test(mrNorm(country)) ? 'es' : 'en'; }
 
 /* ---------- price variance of a quote against the benchmark ---------- */
@@ -6337,6 +6462,145 @@ function mrImportPlan(sets, size) {
   });
   return calls;
 }
+/* ---------- AI finder (providers and published rates found by the AI web search; always to be confirmed by a person) ----------
+   Needs esc() of the page (HTML escaping). Everything the AI returns is cleaned here before it is drawn or sent back to the server:
+   strings are capped, links must be http(s) without credentials, emails and phones must look right, amounts must be finite numbers. */
+const MR_AI_KINDS = [['guide', 'Guides'], ['driver', 'Drivers'], ['transfer', 'Transfers'], ['car_rental', 'Car rental'], ['vehicle_charter', 'Vehicle charter (minivan / bus)'], ['agency', 'Tour agencies']];
+const MR_CATEGORIES = [['Transporte', 'Transport'], ['Guía Oficial', 'Official guide'], ['Conductor', 'Driver'], ['Alquiler de vehículos', 'Car rental'], ['Transfer', 'Transfer'], ['Agencia receptiva', 'Tour agency']];   // suggestions only: free text stays allowed
+const MR_AI_ENTITY = { company: ['Company', 'info'], individual: ['Individual', 'info mr-ind'], unknown: ['Unknown', ''] };   // the dashed border tells Individual from Company without relying on colour
+const MR_AI_CONF = { high: ['High confidence', 'ok'], medium: ['Medium confidence', 'info'], low: ['Low confidence', 'warn'] };
+const MR_AI_BANNER = 'Found by AI from public web pages: open each source and confirm before contacting.';
+const MR_AI_MAX = 12;
+function mrAiStr(v, n) { return String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n); }
+function mrAiKindLabel(k) { const x = MR_AI_KINDS.find(y => y[0] === k); return x ? x[1] : ''; }
+function mrAiProviderName(p) { p = String(p || '').toLowerCase(); return p === 'gemini' ? 'Gemini' : p === 'anthropic' || p === 'claude' ? 'Claude' : ''; }
+function mrHost(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
+/* a link to a public page: nothing at all (not even text) when the scheme is not http/https */
+function mrAiLink(u, text) { const s = mrSafeUrl(u); return s ? '<a href="' + esc(s) + '" target="_blank" rel="noopener noreferrer">' + esc(text || mrHost(s) || 'source') + ' ↗</a>' : ''; }
+function mrAiPhone(p) { p = mrAiStr(p, 40); return /^\+?[0-9][0-9 ()./\-]{4,38}[0-9]$/.test(p) ? p : ''; }
+function mrAiAmount(v) { const n = typeof v === 'number' ? v : (MR_NUM_RE.test(String(v)) ? Number(v) : NaN); return isFinite(n) && n > 0 && n < 1000000 ? n : null; }
+function mrAiRate(r) {
+  r = r || {}; const amount = mrAiAmount(r.amount), cur = mrAiStr(r.currency, 12).toUpperCase(); if (amount === null || !/^[A-Z]{3}$/.test(cur)) return null;
+  return { service: mrAiStr(r.service, 120), amount: amount, currency: cur, unit: mrAiStr(r.unit, 80), note: mrAiStr(r.note, 300), source_url: mrSafeUrl(r.source_url) };
+}
+let MR_AI_SEQ = 0;
+/* one candidate as the server sent it -> the safe shape used by the page (null when it has no name). _k identifies it in this page. */
+function mrAiClean(c) {
+  c = c || {}; const name = mrAiStr(c.name, 200); if (!name) return null;
+  const out = { _k: ++MR_AI_SEQ, name: name, entity: MR_AI_ENTITY[c.entity] ? c.entity : 'unknown', category: mrAiStr(c.category, 80), url: '', email: '', phone: '', contact_source: '', rates: [], source_urls: [], confidence: MR_AI_CONF[c.confidence] ? c.confidence : 'low', notes: mrAiStr(c.notes, 500), blocked: c.blocked === true, port: mrAiStr(c.port, 100), country: mrAiStr(c.country, 80), exists: c.exists === true };
+  if (out.blocked) return out;   // do-not-contact: nothing else is kept, so nothing can be shown or sent
+  out.url = mrSafeUrl(c.url); out.email = mrEmailOk(c.email) ? String(c.email).trim() : ''; out.phone = mrAiPhone(c.phone); out.contact_source = mrSafeUrl(c.contact_source);
+  out.rates = (Array.isArray(c.rates) ? c.rates : []).slice(0, 20).map(mrAiRate).filter(Boolean);
+  out.source_urls = (Array.isArray(c.source_urls) ? c.source_urls : []).map(mrSafeUrl).filter(Boolean).slice(0, 10);
+  return out;
+}
+function mrAiCleanResult(r) {
+  r = r || {}; const rem = Number(r.remaining_today);
+  return { candidates: (Array.isArray(r.candidates) ? r.candidates : []).slice(0, MR_AI_MAX).map(mrAiClean).filter(Boolean), warning: mrAiStr(r.warning, 300), provider: mrAiProviderName(r.provider), searched_at: mrMs(r.searched_at), remaining_today: r.remaining_today == null || r.remaining_today === '' || !isFinite(rem) ? null : Math.max(0, Math.floor(rem)) };
+}
+/* the request of the finder from the form: port (2..100 characters), country, kind, language */
+function mrAiRequest(f) {
+  f = f || {}; const p = f.port || {}, port = mrAiStr(p.port || p.city || '', 100);
+  if (port.length < 2) return { error: 'Pick or type the port to search (at least 2 letters).' };
+  if (!MR_AI_KINDS.some(k => k[0] === f.kind)) return { error: 'Choose what to look for.' };
+  return { req: { port: port, country: mrAiStr(p.country, 80), kind: f.kind, lang: mrAiStr(f.lang, 40) } };
+}
+/* "latest wins": next() starts a call; ok(n) is false once a newer call started or cancel() ran, so an old answer never overwrites a newer one */
+function mrAiLatest() { let n = 0; return { next() { return ++n; }, ok(k) { return k === n; }, cancel() { n++; } }; }
+async function mrAiGuarded(guard, run, clean) {
+  const my = guard.next(); let r;
+  try { r = await run(); } catch (e) { if (!guard.ok(my)) return { stale: true }; throw e; }
+  return guard.ok(my) ? { res: clean(r) } : { stale: true };
+}
+function mrAiRunFind(call, guard, req) { return mrAiGuarded(guard, () => call('api_mrAiFind', req), mrAiCleanResult); }
+function mrAiCleanRates(r) {
+  r = r || {}; const rem = Number(r.remaining_today);
+  return { rates: (Array.isArray(r.rates) ? r.rates : []).slice(0, 20).map(x => Object.assign(mrAiRate(x) || {}, {})).filter(x => x.amount), source_urls: (Array.isArray(r.source_urls) ? r.source_urls : []).map(mrSafeUrl).filter(Boolean).slice(0, 10), warning: mrAiStr(r.warning, 300), remaining_today: r.remaining_today == null || r.remaining_today === '' || !isFinite(rem) ? null : Math.max(0, Math.floor(rem)) };
+}
+function mrAiRunRates(call, guard, supplierKey) { return mrAiGuarded(guard, () => call('api_mrAiRates', { supplier_key: supplierKey }), mrAiCleanRates); }
+/* "Add to suppliers" / "Add with rates": the candidate (already cleaned) plus the port, country and kind it was found for */
+function mrAiAddPayload(c, f) {
+  const p = (f && f.port) || {};
+  return { name: c.name, entity: c.entity, category: c.category, url: c.url, email: c.email, phone: c.phone, contact_source: c.contact_source, rates: c.rates.map(r => Object.assign({}, r)), source_urls: c.source_urls.slice(), confidence: c.confidence, notes: c.notes, port: c.port || mrAiStr(p.port || p.city || '', 100), country: c.country || mrAiStr(p.country, 80), kind: (f && f.kind) || '' };
+}
+async function mrAiAddFlow(call, c, f, withRates) {
+  if (!c || c.blocked) throw new Error('This supplier is on the do-not-contact list and cannot be added.');
+  if (c.exists) throw new Error('A supplier with the same name, port and category already exists.');
+  return call('api_mrAiAdd', mrAiAddPayload(c, f), { withRates: !!withRates && c.rates.length > 0 });
+}
+/* an AI rate becomes a quote with origin 'ai' (unverified until a person confirms). The benchmark is in USD: a rate in another currency is saved in its own currency with no USD price (the server accepts that for AI quotes; no benchmark comparison). */
+function mrAiQuotePayload(sup, rate) {
+  const cur = rate.currency, isUsd = cur === 'USD', a = isUsd ? rate.amount : '';
+  const note = [rate.note, rate.source_url ? 'Source: ' + rate.source_url : ''].filter(Boolean).join(' · ').slice(0, 300);
+  return { q: { supplier_key: sup.key, port: sup.port || '', category: sup.category || '', subcat: rate.service.slice(0, 120), lang: '', unit: rate.unit, amount_usd: a, currency: cur, amount_local: isUsd ? '' : rate.amount, valid_until: '', notes: note, origin: 'ai', source_url: rate.source_url || '' } };
+}
+async function mrAiAcceptFlow(call, sup, rate) { return call('api_mrQuoteSave', mrAiQuotePayload(sup, rate).q); }
+/* what a quote shows as its price: the USD amount, or the amount in its own currency when it has no USD price (AI quotes in another currency) */
+function mrQuotePrice(q) { const u = mrNum(q && q.amount_usd), l = mrNum(q && q.amount_local); return u !== null && u > 0 ? { text: mrUsd(u), usd: true } : l !== null && l > 0 ? { text: String((q && q.currency) || '') + ' ' + mrMoney(l), usd: false } : { text: '—', usd: true }; }
+
+/* quote origin: 'team' (default), 'ai' (found by the AI, unverified) or 'ai-confirmed' (a person checked it) */
+function mrQuoteOrigin(q) { const o = String((q && q.origin) || 'team'); return o === 'ai' || o === 'ai-confirmed' ? o : 'team'; }
+function mrQuoteOriginHtml(q) {
+  const o = mrQuoteOrigin(q); if (o === 'team') return '';
+  const link = mrAiLink(q.source_url, 'source');
+  return (o === 'ai' ? '<span class="chip warn" title="Found by the AI on a public web page: check the source, then confirm">AI · unverified</span>' : '<span class="chip ok" title="Found by the AI and checked by a person">AI · confirmed</span>') + (link ? ' ' + link : '');
+}
+
+/* ---------- AI finder: markup ---------- */
+function mrAiRateLine(r) {
+  const link = mrAiLink(r.source_url, 'source');
+  return '<li><b>' + esc(r.currency + ' ' + mrMoney(r.amount)) + '</b>' + (r.unit ? ' <span class="muted">' + esc(r.unit) + '</span>' : '') + (r.service ? ' · ' + esc(r.service) : '') + (r.note ? ' <small class="muted">' + esc(r.note) + '</small>' : '') + ' ' + (link || '<small class="muted">(no source link)</small>') + '</li>';
+}
+/* s = {added: the saved supplier or undefined, adding: bool} */
+function mrAiCardHtml(c, s) {
+  s = s || {}; const ent = MR_AI_ENTITY[c.entity] || MR_AI_ENTITY.unknown, conf = MR_AI_CONF[c.confidence] || MR_AI_CONF.low;
+  const head = '<div class="mr-ai-h"><b>' + esc(c.name) + '</b> <span class="chip ' + ent[1] + '">' + ent[0] + '</span>' + (c.category ? ' <span class="chip" title="' + esc(c.category) + '">' + esc(mrCatLabel(c.category)) + '</span>' : '') + (c.blocked ? '' : ' <span class="chip ' + conf[1] + '">' + conf[0] + '</span>') + '</div>';
+  if (c.blocked) return '<div class="mr-ai-card blocked" data-ck="' + esc(c._k) + '" tabindex="-1" aria-disabled="true">' + head + '<p class="mr-ai-why"><span class="chip bad">Do not contact</span> This name or contact is on the do-not-contact list: no contact details or rates are shown and it cannot be added.</p></div>';
+  const src = mrAiLink(c.contact_source, 'source') || '<small class="muted">(not verified: no source page)</small>', lines = [];
+  if (c.url) lines.push('<div>Web: ' + mrAiLink(c.url, mrHost(c.url) || c.url) + '</div>');
+  if (c.email) lines.push('<div>Email: <span class="mr-ai-v">' + esc(c.email) + '</span> ' + src + '</div>');
+  if (c.phone) lines.push('<div>Phone: <span class="mr-ai-v">' + esc(c.phone) + '</span> ' + src + '</div>');
+  if (!lines.length) lines.push('<div class="muted">No public contact found.</div>');
+  const sources = c.source_urls.map((u, i) => mrAiLink(u, mrHost(u) || 'source ' + (i + 1))).filter(Boolean);
+  const busy = !!s.adding, off = busy ? ' disabled' : '', have = c.exists && !s.added;
+  return '<div class="mr-ai-card" data-ck="' + esc(c._k) + '" tabindex="-1">' + head + '<div class="mr-ai-body">' + lines.join('') +
+    (c.rates.length ? '<div class="mr-ai-rates"><h5>Published rates</h5><ul>' + c.rates.map(mrAiRateLine).join('') + '</ul></div>' : '<div class="muted">No published rate found.</div>') +
+    (c.notes ? '<div class="hint">' + esc(c.notes) + '</div>' : '') + (sources.length ? '<div class="hint">Sources: ' + sources.join(' · ') + '</div>' : '') + '</div>' +
+    '<div class="mr-ai-act">' + (s.added ? '<span class="chip ok">Added</span> <button class="btn sm" data-ai-open="' + esc(c._k) + '">Open supplier</button>' : have ? '<span class="chip warn">Already in your suppliers</span>' :
+      '<button class="btn sm primary" data-ai-add="' + esc(c._k) + '"' + off + '>' + (busy ? '<span class="spin"></span> ' : '') + 'Add to suppliers</button>' + (c.rates.length ? '<button class="btn sm" data-ai-addr="' + esc(c._k) + '"' + off + '>Add with rates (' + c.rates.length + ')</button>' : '')) + '</div></div>';
+}
+/* a = {busy, err, res, resFor:{port, kind}, remaining, added:{_k: supplier}, adding:{_k: true}} */
+function mrAiRemainingText(n) { return n == null ? '' : 'AI searches left today: ' + n; }
+function mrAiResultsHtml(a) {
+  a = a || {}; if (a.err) return '<div class="err" role="alert">' + esc(a.err) + '</div>';
+  if (a.busy) return '<p class="muted" role="status"><span class="spin"></span> Searching public web pages with the AI… this can take up to a minute.</p>';
+  const r = a.res; if (!r) return '';
+  const rf = a.resFor || {}, what = [mrAiKindLabel(rf.kind), rf.port && (rf.port.port || rf.port.city) ? 'in ' + (rf.port.port || rf.port.city) : ''].filter(Boolean).join(' ');
+  const meta = [r.candidates.length + ' result' + (r.candidates.length === 1 ? '' : 's') + (what ? ' for ' + what : ''), r.provider ? 'searched with ' + r.provider : '', r.searched_at ? new Date(r.searched_at).toISOString().slice(0, 10) : '', mrAiRemainingText(r.remaining_today != null ? r.remaining_today : a.remaining)].filter(Boolean).join(' · ');
+  return '<div class="note mr-ai-banner" role="note">' + esc(MR_AI_BANNER) + '</div><p class="hint" role="status" style="margin:8px 0">' + esc(meta) + '</p>' +
+    (r.warning ? '<div class="note" role="status" style="margin:0 0 8px">' + esc(r.warning) + '</div>' : '') + (r.candidates.length ? '<div class="mr-ai-list">' + r.candidates.map(c => mrAiCardHtml(c, { added: (a.added || {})[c._k], adding: (a.adding || {})[c._k] })).join('') + '</div>' : '<div class="empty">Nothing found for this search. Try another kind of provider or a nearby port.</div>');
+}
+function mrAiFormHtml(a, comboHtml) {
+  a = a || {};
+  return '<div class="card mr-ai" id="mrAiCard"><div class="mr-sec-h" style="margin:0 0 6px"><h3>Find suppliers with AI</h3><button class="btn sm ghost" id="mrAiX" aria-label="Close the AI finder">✕ Close</button></div>' +
+    '<p class="hint" style="margin:0 0 4px">The AI searches public web pages for providers in a cruise port and shows whether each one is a company or an individual, its public contact and any published rate. Only the port, country, kind and language are sent. Nothing is saved or contacted until you press Add.</p>' +
+    '<div class="mr-g2"><div class="full"><label for="mrAip">Port</label>' + comboHtml + '</div><div><label for="mrAiK">What to look for</label><select id="mrAiK">' + MR_AI_KINDS.map(k => '<option value="' + esc(k[0]) + '"' + (k[0] === a.kind ? ' selected' : '') + '>' + esc(k[1]) + '</option>').join('') + '</select></div>' +
+    '<div><label for="mrAiL">Language <span class="hint">(optional)</span></label><input id="mrAiL" type="text" maxlength="40" autocomplete="off" placeholder="e.g. English, Spanish" value="' + esc(a.lang || '') + '"></div></div>' +
+    '<div class="err hidden" id="mrAiE" role="alert"></div><div class="toolbar" style="margin:12px 0 0"><button class="btn primary" id="mrAiGo">Find</button><span class="hint" id="mrAiRem">' + esc(mrAiRemainingText(a.remaining)) + '</span></div><div id="mrAiRes" style="margin-top:12px"></div></div>';
+}
+/* rates found for one supplier (supplier detail): a = {busy, err, res:{rates, source_urls, remaining_today}, done:{index: true}} */
+function mrAiRatesHtml(a) {
+  a = a || {}; if (a.err) return '<div class="err" role="alert">' + esc(a.err) + '</div>';
+  if (a.busy) return '<p class="muted" role="status"><span class="spin"></span> Searching the web for published rates… this can take up to a minute.</p>';
+  const r = a.res; if (!r) return '';
+  const rem = mrAiRemainingText(r.remaining_today), srcs = r.source_urls.map((u, i) => mrAiLink(u, mrHost(u) || 'source ' + (i + 1))).filter(Boolean);
+  return '<div class="note mr-ai-banner" role="note">' + esc(MR_AI_BANNER) + ' Accepted rates are saved as <b>AI · unverified</b> quotes until a person confirms them. A rate in a currency other than USD is saved in that currency, without a benchmark comparison.</div>' + (r.warning ? '<div class="note" role="status" style="margin:8px 0 0">' + esc(r.warning) + '</div>' : '') + (rem ? '<p class="hint" style="margin:6px 0 0">' + esc(rem) + '</p>' : '') +
+    (r.rates.length ? '<div class="mr-list" style="margin-top:8px">' + r.rates.map((x, i) => {
+      const done = (a.done || {})[i], link = mrAiLink(x.source_url, 'source');
+      return '<div class="mr-item"><div><b>' + esc(x.currency + ' ' + mrMoney(x.amount)) + '</b>' + (x.unit ? ' <span class="muted">' + esc(x.unit) + '</span>' : '') + (x.service ? ' · ' + esc(x.service) : '') + '<div class="hint">' + (x.note ? esc(x.note) + ' ' : '') + (link || '(no source link)') + '</div></div>' +
+        '<div class="mr-mact">' + (done ? '<span class="chip ok">Saved as AI quote</span>' : '<button class="btn sm primary" data-ai-acc="' + i + '">Accept as AI quote</button>') + '</div></div>';
+    }).join('') + '</div>' : '<p class="muted" style="margin:8px 0 0">No published rates found for this supplier.</p>') + (srcs.length ? '<div class="hint" style="margin-top:6px">Sources: ' + srcs.join(' · ') + '</div>' : '');
+}
 /*MR-PURE-END*/
 
 /* ====================== page code ====================== */
@@ -6351,6 +6615,8 @@ function mrShell() {
   if (proc) ADM.tab = 'market';
 }
 function mrState() { return ADM.mr || (ADM.mr = { tab: 'benchmark', run: 0, ports: null, portsInfo: null, port: null, bench: null, benchSeq: 0, services: null, cmpKey: '', cmpCache: {}, sup: { port: null, category: '', status: '', q: '', offset: 0, limit: 100 }, qp: null, ro: null, timer: 0 }); }
+/* the AI finder state lives with the page state (ADM.mr), so results survive a tab change; a call still running when the page is redrawn is cancelled (guard) */
+function mrAiState(st) { return st.ai || (st.ai = { open: false, port: null, kind: 'guide', lang: '', busy: false, err: '', res: null, resFor: null, remaining: null, added: {}, adding: {}, guard: mrAiLatest() }); }
 const MR_STOP = { mrStop: true };
 /* every call: the session token first; a lost session ends the page work quietly (callers ignore MR_STOP) */
 async function mrApi(name, ...args) {
@@ -6466,8 +6732,8 @@ function mrDrawBench(ctx, host, p, b) {
   const list0 = b && b.found && Array.isArray(b.services) ? b.services : [];
   if (!list0.length) {   // not in the rates at all, or in the catalogue with no benchmarked service: say so once, keep the port, and offer the next step
     const P0 = (b && b.port) || p, name = esc(P0.port || mrPortLabel(p));
-    host.innerHTML = (b && b.stale ? mrStaleHtml() : '') + mrStripHtml(P0, p) + '<div class="card" style="margin-top:14px"><h3>No rates for “' + esc(mrPortLabel(p)) + '”</h3><p class="muted" style="margin:6px 0 12px">This port has no benchmarked services yet, so there is nothing to compare. You can still look for suppliers here.</p><button class="btn primary" id="mrFindSup">Find suppliers for ' + name + '</button></div>';
-    host.onclick = e => { if (!e.target.closest('#mrFindSup')) return; st.sup.port = p; st.sup.offset = 0; st.tab = 'suppliers'; renderMarket(ctx.body, ctx.live); };
+    host.innerHTML = (b && b.stale ? mrStaleHtml() : '') + mrStripHtml(P0, p) + '<div class="card" style="margin-top:14px"><h3>No rates for “' + esc(mrPortLabel(p)) + '”</h3><p class="muted" style="margin:6px 0 12px">This port has no benchmarked services yet, so there is nothing to compare. You can still look for suppliers here, also with the AI.</p><button class="btn primary" id="mrFindSup">Find suppliers for ' + name + '</button></div>';
+    host.onclick = e => { if (!e.target.closest('#mrFindSup')) return; const ai = mrAiState(st); ai.open = true; ai.port = p; ai.guard.cancel(); ai.busy = false; ai.res = null; ai.err = ''; st.sup.port = p; st.sup.offset = 0; st.tab = 'suppliers'; renderMarket(ctx.body, ctx.live); };
     return;
   }
   const P = b.port || {}, services = list0.map((s, i) => Object.assign({ _i: i }, s));
@@ -6552,9 +6818,9 @@ async function mrTabSuppliers(ctx) {
   const { box, alive, st } = ctx, f = st.sup;
   box.innerHTML = mrSpin('Loading…'); await mrLoadPorts(st); if (!alive()) return;
   box.innerHTML = '<div class="toolbar mr-bar">' + mrComboHtml('mrSp', 'Any port (type to filter)…', 'Filter by port', f.port ? mrPortLabel(f.port) : '') +
-    '<input type="text" id="mrSc" list="mrScL" placeholder="Category" aria-label="Category" value="' + esc(f.category) + '" style="width:150px" autocomplete="off"><datalist id="mrScL"><option value="Transporte" label="Transport"><option value="Guía Oficial" label="Official guide"></datalist>' +
+    '<input type="text" id="mrSc" list="mrScL" placeholder="Category" aria-label="Category" value="' + esc(f.category) + '" style="width:150px" autocomplete="off"><datalist id="mrScL">' + MR_CATEGORIES.map(c => '<option value="' + esc(c[0]) + '" label="' + esc(c[1]) + '">').join('') + '</datalist>' +
     '<select id="mrSs" aria-label="Status" style="width:auto"></select><input type="search" id="mrSq" class="srt-q" placeholder="Search name, contact, notes…" aria-label="Search suppliers" value="' + esc(f.q) + '" autocomplete="off">' +
-    '<span class="sp"></span><span class="hint" id="mrSn"></span><button class="btn primary" id="mrNew">+ New supplier</button></div><div id="mrSL"></div><div class="mr-pager hidden" id="mrPg"></div>';
+    '<span class="sp"></span><span class="hint" id="mrSn"></span><button class="btn" id="mrAi" aria-expanded="false">✨ Find with AI</button><button class="btn primary" id="mrNew">+ New supplier</button></div><div id="mrAiBox"></div><div id="mrSL"></div><div class="mr-pager hidden" id="mrPg"></div>';
   const list = $('#mrSL', box); let rows = [], total = 0, seq = 0, counts = {};
   const drawStatus = () => { $('#mrSs', box).innerHTML = mrOpt('', 'Any status', !f.status) + MR_STATUSES.map(s => mrOpt(s[0], s[1] + (counts[s[0]] != null ? ' (' + counts[s[0]] + ')' : ''), f.status === s[0])).join(''); };
   const load = async () => {
@@ -6565,7 +6831,7 @@ async function mrTabSuppliers(ctx) {
   const draw = () => {
     $('#mrSn', box).textContent = total ? mrThousands(total) + ' supplier' + (total === 1 ? '' : 's') : '';
     list.innerHTML = '<div class="tbl-wrap"><table class="list"><thead><tr><th>Supplier</th><th>Port</th><th>Country</th><th>Category</th><th>Status</th><th>Owner</th><th>Contact</th><th>Quotes</th><th>Updated</th></tr></thead><tbody>' +
-      (rows.length ? rows.map((r, i) => '<tr class="click" tabindex="0" data-k="' + i + '"><td data-sv="' + esc(r.name) + '"><b>' + esc(r.name) + '</b>' + (r.blocked ? ' <span class="chip bad" title="On the do-not-contact list">Do not contact</span>' : '') + (r.ota ? '<div class="hint">' + esc(r.ota) + '</div>' : '') + '</td><td>' + esc(r.port || '—') + '</td><td>' + esc(r.country || '—') + '</td><td>' + esc(r.category || '—') + '</td>' +
+      (rows.length ? rows.map((r, i) => '<tr class="click" tabindex="0" data-k="' + i + '"><td data-sv="' + esc(r.name) + '"><b>' + esc(r.name) + '</b>' + (MR_AI_ENTITY[r.entity] && r.entity !== 'unknown' ? ' <span class="chip ' + MR_AI_ENTITY[r.entity][1] + '">' + MR_AI_ENTITY[r.entity][0] + '</span>' : '') + (r.blocked ? ' <span class="chip bad" title="On the do-not-contact list">Do not contact</span>' : '') + (r.ota ? '<div class="hint">' + esc(r.ota) + '</div>' : '') + '</td><td>' + esc(r.port || '—') + '</td><td>' + esc(r.country || '—') + '</td><td data-sv="' + esc(r.category || '') + '"' + (r.category ? ' title="' + esc(r.category) + '"' : '') + '>' + esc(r.category ? mrCatLabel(r.category) : '—') + '</td>' +
         '<td data-sv="' + esc(mrStat(r.status)[1]) + '">' + mrStatChip(r.status) + '</td><td>' + esc(r.owner || '—') + '</td><td>' + esc(r.person || '—') + '</td><td class="n" data-sv="' + esc(Number(r.quotes) || 0) + '">' + esc(Number(r.quotes) || 0) + '</td><td data-sv="' + esc(mrMs(r.updated_ms)) + '">' + esc(mrMs(r.updated_ms) ? fmtDate(mrMs(r.updated_ms)) : '—') + '</td></tr>').join('') :
         '<tr><td colspan="9" class="empty">' + (total || f.q || f.port || f.category || f.status ? 'No supplier matches these filters.' : 'No suppliers yet. An admin can import the directory, or add one with “+ New supplier”.') + '</td></tr>') + '</tbody></table></div>';
     srtTable(list, 'mr-sup', ['text', 'text', 'text', 'text', 'text', 'text', 'text', 'num', 'date']);
@@ -6574,18 +6840,73 @@ async function mrTabSuppliers(ctx) {
     pg.innerHTML = '<span class="hint">' + (rows.length ? from + '–' + to + ' of ' + mrThousands(total) + ' (sorting applies to this page)' : '') + '</span><button class="btn sm" id="mrPrev"' + (f.offset <= 0 ? ' disabled' : '') + '>← Previous</button><button class="btn sm" id="mrNext"' + (to >= total ? ' disabled' : '') + '>Next →</button>';
   };
   const reload = () => { f.offset = 0; load(); };
-  mrComboBind(box, 'mrSp', { find: q => mrSuggestPorts(st.ports, q, 8), initial: () => mrPopular(st.ports, 8), onPick: p => { f.port = p; reload(); }, onClear: () => { if (f.port) { f.port = null; reload(); } }, current: () => f.port });
+
+  /* ---- Find with AI: panel above the list ----
+     The state lives in A (ADM.mr.ai) and is NOT thrown away when the page is redrawn: an answer that was paid for is kept and shown whenever the Suppliers tab is open; only a
+     NEWER search or a change of port / kind / language drops an older one (guard). The handlers of an older page reach the page that is open now through A.draw / A.reload. */
+  const A = mrAiState(st), aiBox = $('#mrAiBox', box);
+  A.draw = () => { if (aiBox.isConnected) aiDrawRes(); }; A.reload = () => { if (aiBox.isConnected && alive()) load(); };
+  const aiKey = k => A.res && A.res.candidates.find(c => String(c._k) === String(k));
+  const aiFocus = () => {   // which card control has the keyboard focus (a redraw replaces it)
+    const a = document.activeElement; if (!a || !aiBox.contains(a) || !a.getAttribute) return null;
+    const k = a.getAttribute('data-ai-add') || a.getAttribute('data-ai-addr') || a.getAttribute('data-ai-open'); return k ? { k: k, sel: a.hasAttribute('data-ai-add') ? '[data-ai-add="' + k + '"]' : a.hasAttribute('data-ai-addr') ? '[data-ai-addr="' + k + '"]' : '[data-ai-open="' + k + '"]' } : null;
+  };
+  const aiDrawRes = () => {
+    const keep = aiFocus(), h = $('#mrAiRes', aiBox); if (h) h.innerHTML = mrAiResultsHtml(A);
+    const b = $('#mrAiGo', aiBox); if (b) { b.disabled = A.busy; b.innerHTML = A.busy ? '<span class="spin"></span> Searching…' : 'Find'; }
+    const r = $('#mrAiRem', aiBox); if (r) r.textContent = mrAiRemainingText(A.remaining);
+    if (keep) { const n = [$(keep.sel, aiBox), $('[data-ai-open="' + keep.k + '"]', aiBox), $('[data-ck="' + keep.k + '"]', aiBox)].find(x => x && !x.disabled); if (n && n.focus) n.focus(); }   // keyboard users stay on the same card
+  };
+  const aiShow = () => {
+    $('#mrAi', box).setAttribute('aria-expanded', String(A.open));
+    if (!A.open) { aiBox.innerHTML = ''; return; }
+    if (!A.port && f.port) A.port = f.port;
+    aiBox.innerHTML = mrAiFormHtml(A, mrComboHtml('mrAip', 'Type a port or city…', 'Port to search', A.port ? mrPortLabel(A.port) : ''));
+    const inp = $('#mrAip', aiBox), cancel = () => { A.guard.cancel(); A.busy = false; aiDrawRes(); };
+    mrComboBind(aiBox, 'mrAip', { find: q => mrSuggestPorts(st.ports, q, 8), initial: () => mrPopular(st.ports, 8), onPick: p => { A.port = p; cancel(); }, onClear: () => { A.port = null; cancel(); }, current: () => A.port });
+    inp.addEventListener('input', () => { const v = inp.value.trim(); if (!A.port || mrPortLabel(A.port) !== v) A.port = v ? { port: v, country: '' } : null; });   // a port that is not in the list can be typed
+    $('#mrAiK', aiBox).onchange = e => { A.kind = e.target.value; cancel(); };
+    $('#mrAiL', aiBox).oninput = e => { A.lang = e.target.value; }; $('#mrAiL', aiBox).onchange = cancel;
+    $('#mrAiX', aiBox).onclick = () => { A.open = false; aiShow(); const t = $('#mrAi', box); if (t && t.focus) t.focus(); };   // a search still running keeps going: its answer is kept for when the panel is opened again
+    $('#mrAiGo', aiBox).onclick = aiFind; aiDrawRes();
+  };
+  async function aiFind() {
+    const chk = mrAiRequest({ port: A.port, kind: A.kind, lang: A.lang }), e = $('#mrAiE', aiBox);
+    if (chk.error) { e.textContent = chk.error; e.classList.remove('hidden'); return; } e.classList.add('hidden');
+    A.busy = true; A.err = ''; A.res = null; aiDrawRes(); const sent = { port: A.port, kind: A.kind };
+    try {
+      const out = await mrAiRunFind(mrApi, A.guard, chk.req); if (out.stale) return;   // a newer search (or another port / kind) replaced this one
+      A.busy = false; A.res = out.res; A.resFor = sent; A.added = {}; A.adding = {}; if (out.res.remaining_today != null) A.remaining = out.res.remaining_today;
+    } catch (x) { A.busy = false; A.err = mrMsg(x); }
+    A.draw();
+  }
+  async function aiAdd(k, withRates) {
+    const c = aiKey(k); if (!c || A.adding[c._k] || A.added[c._k]) return; A.adding[c._k] = true; aiDrawRes();
+    try {
+      const r = await mrAiAddFlow(mrApi, c, A.resFor, withRates), sup = (r && r.supplier) || r, n = r && Array.isArray(r.quotes) ? r.quotes.length : 0;
+      A.added[c._k] = sup || {}; toast(withRates && n ? 'Supplier added with ' + n + ' AI quote' + (n === 1 ? '' : 's') + ' (unverified)' : 'Supplier added'); A.reload();
+    } catch (x) { mrFail(x); }
+    delete A.adding[c._k]; A.draw();
+  }
+  aiBox.onclick = e => {
+    let el;
+    if ((el = e.target.closest('[data-ai-add]'))) aiAdd(el.dataset.aiAdd, false);
+    else if ((el = e.target.closest('[data-ai-addr]'))) aiAdd(el.dataset.aiAddr, true);
+    else if ((el = e.target.closest('[data-ai-open]'))) { const c = aiKey(el.dataset.aiOpen), sup = c && A.added[c._k]; if (sup && sup.key) mrSupplierModal(ctx, sup, load); }
+  };
+  mrComboBind(box, 'mrSp', { find: q => mrSuggestPorts(st.ports, q, 8), initial: () => mrPopular(st.ports, 8), onPick: p => { f.port = p; reload(); if (A.open) { A.port = p; A.guard.cancel(); A.busy = false; aiShow(); } }, onClear: () => { if (f.port) { f.port = null; reload(); } }, current: () => f.port });
   $('#mrSc', box).onchange = e => { f.category = e.target.value.trim(); reload(); };
   $('#mrSs', box).onchange = e => { f.status = e.target.value; reload(); };
   $('#mrSq', box).oninput = e => { f.q = e.target.value.trim(); clearTimeout(st.timer); st.timer = setTimeout(() => { if (alive()) reload(); }, 300); };
   box.onclick = e => {
-    if (e.target.closest('#mrNew')) return mrSupplierModal(ctx, { port: f.port ? (f.port.port || '') : '', country: f.port ? (f.port.country || '') : '', category: mrCatFilter(f.category) === 'guia' ? 'Guía Oficial' : f.category }, load);
+    if (e.target.closest('#mrAi')) { A.open = !A.open; if (A.open && f.port) A.port = f.port; aiShow(); const i = $('#mrAip', aiBox); if (A.open && i) i.focus(); return; }
+    if (e.target.closest('#mrNew')) return mrSupplierModal(ctx, { port: f.port ? (f.port.port || '') : '', country: f.port ? (f.port.country || '') : '', category: mrCatCanon(f.category) }, load);
     if (e.target.closest('#mrPrev')) { f.offset = Math.max(0, f.offset - f.limit); return load(); }
     if (e.target.closest('#mrNext')) { f.offset += f.limit; return load(); }
     const tr = e.target.closest('tr[data-k]'); if (tr && rows[+tr.dataset.k]) mrSupplierModal(ctx, rows[+tr.dataset.k], load);
   };
   box.onkeydown = e => { if (e.key !== 'Enter' && e.key !== ' ') return; const tr = e.target.closest ? e.target.closest('tr[data-k]') : null; if (!tr || e.target !== tr || !rows[+tr.dataset.k]) return; e.preventDefault(); mrSupplierModal(ctx, rows[+tr.dataset.k], load); };   // a supplier row opens with the keyboard too
-  drawStatus(); load();
+  drawStatus(); aiShow(); load();
 }
 
 /* ---------- modal helpers ---------- */
@@ -6599,9 +6920,9 @@ function mrOverlay(html, kind) {   // null when a window of this kind is already
 const mrSvcText = q => [q.subcat || mrCatLabel(q.category), mrUnitLabel(q.unit), q.lang].filter(Boolean).join(' · ');
 const mrBadgeHtml = vs => { const b = mrBadge(vs); return '<span class="chip ' + b.cls + '" title="' + esc(b.title) + '">' + esc(b.text) + '</span>'; };
 function mrQuoteLine(q, canDel) {
-  return '<div class="mr-item" data-q="' + esc(q.id) + '"><div><b>' + esc(mrUsd(q.amount_usd)) + '</b> ' + mrBadgeHtml(q.vs) + ' <span class="muted">' + esc(mrSvcText(q) || q.category || '') + '</span><div class="hint">' +
-    esc([q.currency && q.currency !== 'USD' && q.amount_local ? q.amount_local + ' ' + q.currency : '', q.valid_until ? 'valid until ' + q.valid_until : '', q.by, q.ts ? fmtDate(mrMs(q.ts)) : '', q.notes].filter(Boolean).join(' · ')) + '</div></div>' +
-    (canDel ? '<button class="btn sm danger" data-del="' + esc(q.id) + '">Delete</button>' : '') + '</div>';
+  return '<div class="mr-item" data-q="' + esc(q.id) + '"><div><b>' + esc(mrQuotePrice(q).text) + '</b> ' + mrBadgeHtml(q.vs) + ' ' + mrQuoteOriginHtml(q) + ' <span class="muted">' + esc(mrSvcText(q) || q.category || '') + '</span><div class="hint">' +
+    esc([mrQuotePrice(q).usd && q.currency && q.currency !== 'USD' && q.amount_local ? q.amount_local + ' ' + q.currency : '', q.valid_until ? 'valid until ' + q.valid_until : '', q.by, q.ts ? fmtDate(mrMs(q.ts)) : '', q.notes].filter(Boolean).join(' · ')) + '</div></div>' +
+    '<div class="mr-mact">' + (mrQuoteOrigin(q) === 'ai' ? '<button class="btn sm" data-conf="' + esc(q.id) + '" aria-label="Confirm quote for ' + esc(q.supplier_name || 'this supplier') + '" title="I opened the source and the price is right">Confirm</button>' : '') + (canDel ? '<button class="btn sm danger" data-del="' + esc(q.id) + '">Delete</button>' : '') + '</div></div>';
 }
 const mrCanDel = q => S.role === 'admin' || String(q.by || '').toLowerCase() === String(S.username || '').toLowerCase();
 
@@ -6609,20 +6930,21 @@ const mrCanDel = q => S.role === 'admin' || String(q.by || '').toLowerCase() ===
 async function mrSupplierModal(ctx, sup0, onChange) {
   const isNew = !sup0.key; let cur = Object.assign({}, sup0), svcs = null;
   const ov = mrOverlay('<div class="mr-mh"><div><h3 id="mrSN"></h3><div class="hint" id="mrSM"></div></div><div class="mr-mact"><span id="mrSC"></span>' + (isNew ? '' : '<button class="btn sm" id="mrRfq">✉ Email draft</button>') + '<button class="btn sm" id="mrX">Close</button></div></div>' +
-    '<div class="mr-sec" style="border:0;margin-top:6px;padding-top:0"><h4>Details</h4><div class="mr-g2">' + MR_SUP_FIELDS.map(f => '<div><label for="mrF_' + f[0] + '">' + esc(f[1]) + (f[0] === 'name' ? ' *' : '') + '</label><input type="' + (f[0] === 'email' ? 'email' : 'text') + '" id="mrF_' + f[0] + '" maxlength="' + f[2] + '" autocomplete="off"></div>').join('') +
+    '<div class="mr-sec" style="border:0;margin-top:6px;padding-top:0"><h4>Details</h4><div class="mr-g2">' + MR_SUP_FIELDS.map(f => '<div><label for="mrF_' + f[0] + '">' + esc(f[1]) + (f[0] === 'name' ? ' *' : '') + '</label><input type="' + (f[0] === 'email' ? 'email' : 'text') + '" id="mrF_' + f[0] + '" maxlength="' + f[2] + '" autocomplete="off"' + (f[0] === 'category' ? ' list="mrFcL"' : '') + '></div>').join('') + '<datalist id="mrFcL">' + MR_CATEGORIES.map(c => '<option value="' + esc(c[0]) + '" label="' + esc(c[1]) + '">').join('') + '</datalist>' +
+    '<div><label for="mrF_entity">Company or individual</label><select id="mrF_entity"><option value="">Not set</option><option value="company">Company</option><option value="individual">Individual</option><option value="unknown">Unknown</option></select></div>' +
     '<div class="full"><label for="mrF_notes">Notes</label><textarea id="mrF_notes" maxlength="2000"></textarea></div></div><div class="err hidden" id="mrSE" role="alert"></div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="mrSave">' + (isNew ? 'Create supplier' : 'Save changes') + '</button></div></div>' +
     (isNew ? '' : '<div class="mr-sec"><h4>Status</h4><div class="toolbar" style="margin:0"><select id="mrStS" aria-label="Status" style="width:auto"></select><input type="text" id="mrStN" placeholder="Note (optional)" maxlength="300" aria-label="Status note" style="flex:1 1 220px"><button class="btn" id="mrStB">Update status</button></div></div>' +
       '<div class="mr-sec"><h4>Contact log</h4><div class="toolbar" style="margin:0 0 10px"><select id="mrLgC" aria-label="Channel" style="width:auto">' + MR_CHANNELS.map(c => mrOpt(c[0], c[1])).join('') + '</select><input type="text" id="mrLgN" placeholder="What happened? (optional)" maxlength="300" aria-label="Contact note" style="flex:1 1 240px"><button class="btn" id="mrLgB">Log a contact</button></div><div id="mrLg">' + mrSpin() + '</div></div>' +
       '<div class="mr-sec"><h4>People in the internal Directory for this port</h4><div id="mrDir">' + mrSpin() + '</div></div>' +
-      '<div class="mr-sec"><h4>Quotes</h4><div id="mrQList">' + mrSpin() + '</div><div id="mrQf"></div></div>'), 'supplier');
+      '<div class="mr-sec"><h4>Quotes</h4><div id="mrQList">' + mrSpin() + '</div><div class="toolbar" style="margin:10px 0 0"><button class="btn sm" id="mrAiR">✨ Look for published rates (AI)</button></div><div id="mrAiRates" aria-live="polite"></div><div id="mrQf"></div></div>'), 'supplier');
   if (!ov) return;
   const root = ov.m, alive = () => root.isConnected, setV = (id, v) => { const el = $('#' + id, root); if (el) el.value = v == null ? '' : v; };
-  const head = () => { $('#mrSN', root).textContent = cur.name || 'New supplier'; $('#mrSM', root).textContent = [cur.port, cur.country, cur.category, cur.source ? 'source: ' + cur.source : ''].filter(Boolean).join(' · '); if (!isNew) $('#mrSC', root).innerHTML = mrStatChip(cur.status) + (cur.blocked ? ' <span class="chip bad">Do not contact</span>' : '') + (cur.url ? ' ' + mrLink(cur.url, 'Listing') : ''); };
-  MR_SUP_FIELDS.forEach(f => setV('mrF_' + f[0], cur[f[0]])); setV('mrF_notes', cur.notes); head();
+  const head = () => { $('#mrSN', root).textContent = cur.name || 'New supplier'; $('#mrSM', root).textContent = [cur.port, cur.country, cur.category, MR_AI_ENTITY[cur.entity] && cur.entity !== 'unknown' ? MR_AI_ENTITY[cur.entity][0] : '', cur.source ? 'source: ' + cur.source : ''].filter(Boolean).join(' · '); if (!isNew) $('#mrSC', root).innerHTML = mrStatChip(cur.status) + (cur.blocked ? ' <span class="chip bad">Do not contact</span>' : '') + (cur.url ? ' ' + mrLink(cur.url, 'Listing') : ''); };
+  MR_SUP_FIELDS.forEach(f => setV('mrF_' + f[0], cur[f[0]])); setV('mrF_notes', cur.notes); setV('mrF_entity', cur.entity); head();
   const showErr = m => { const e = $('#mrSE', root); e.textContent = m; e.classList.toggle('hidden', !m); };
   $('#mrX', root).onclick = ov.close;
   $('#mrSave', root).onclick = async ev => {
-    const b = ev.currentTarget, v = {}; MR_SUP_FIELDS.forEach(f => { v[f[0]] = $('#mrF_' + f[0], root).value.trim(); }); v.notes = $('#mrF_notes', root).value.trim();
+    const b = ev.currentTarget, v = {}; MR_SUP_FIELDS.forEach(f => { v[f[0]] = $('#mrF_' + f[0], root).value.trim(); }); v.notes = $('#mrF_notes', root).value.trim(); v.entity = $('#mrF_entity', root).value;
     const patch = cur.key ? mrSupplierDiff(cur, v) : v;   // an existing supplier: only the fields this person changed (somebody else's newer edit of another field stays)
     const bad = !v.name ? 'The supplier needs a name.' : mrSupplierCheck(Object.assign({ name: v.name }, patch)); if (bad) return showErr(bad);
     if (cur.key && !Object.keys(patch).length) { showErr(''); return toast('Nothing to save: no field was changed.'); }
@@ -6669,6 +6991,8 @@ async function mrSupplierModal(ctx, sup0, onChange) {
     $('#mrQList', root).innerHTML = Q.length ? '<div class="mr-list">' + Q.map(q => mrQuoteLine(q, mrCanDel(q))).join('') + '</div>' : '<p class="muted" style="margin:0">No quotes yet.</p>';
   };
   $('#mrQList', root).onclick = async e => {
+    const cf = e.target.closest('[data-conf]');
+    if (cf) { cf.disabled = true; try { await mrApi('api_mrQuoteConfirm', cf.dataset.conf); toast('Quote confirmed'); if (alive()) loadQ(); if (onChange) onChange(); } catch (x) { mrFail(x); if (cf.isConnected) cf.disabled = false; } return; }
     const d = e.target.closest('[data-del]'); if (!d) return;
     if (!await confirmBox('Delete this quote?', '<p style="margin:0">The quote is removed for everybody. This cannot be undone.</p>', 'Delete', 'danger')) return;
     try { await mrApi('api_mrQuoteDelete', d.dataset.del); toast('Quote deleted'); if (alive()) loadQ(); if (onChange) onChange(); } catch (x) { mrFail(x); }
@@ -6689,6 +7013,23 @@ async function mrSupplierModal(ctx, sup0, onChange) {
     };
   };
   loadQ(); quoteForm();
+  /* published rates found by the AI for this supplier: nothing is saved until a person accepts a rate (it is then an unverified AI quote) */
+  const rg = mrAiLatest(), R = { busy: false, err: '', res: null, done: {} }, rHost = $('#mrAiRates', root), rDraw = () => { rHost.innerHTML = mrAiRatesHtml(R); const b = $('#mrAiR', root); if (b) b.disabled = R.busy; };
+  $('#mrAiR', root).onclick = async () => {
+    if (cur.blocked) return toast('This supplier is on the do-not-contact list: no search.', 6000);
+    R.busy = true; R.err = ''; R.res = null; R.done = {}; rDraw();
+    try {
+      const out = await mrAiRunRates(mrApi, rg, cur.key); if (out.stale || !alive()) return; R.busy = false; R.res = out.res;
+      const AS = mrAiState(ctx.st); if (out.res.remaining_today != null) { AS.remaining = out.res.remaining_today; if (AS.draw) AS.draw(); }   // one shared "left today" figure: the finder panel follows
+    }
+    catch (x) { if (!alive()) return; R.busy = false; R.err = mrMsg(x); }
+    if (alive()) rDraw();
+  };
+  rHost.onclick = async e => {
+    const b = e.target.closest('[data-ai-acc]'); if (!b || !R.res) return; const i = +b.dataset.aiAcc, rate = R.res.rates[i]; if (!rate || R.done[i]) return;
+    b.disabled = true;
+    try { await mrApi('api_mrQuoteSave', mrAiQuotePayload(cur, rate).q); R.done[i] = true; toast('Saved as an AI quote (unverified)'); if (alive()) { rDraw(); loadQ(); } if (onChange) onChange(); } catch (x) { mrFail(x); if (b.isConnected) b.disabled = false; }
+  };
   $('#mrRfq', root).onclick = () => { if (cur.blocked) return toast('This supplier is on the do-not-contact list: no email draft.', 6000); mrRfqModal(cur, async () => { try { const r = await mrApi('api_mrLogContact', cur.key, 'email', 'Request-for-quote email sent'); if (alive()) { if (r && r.status) setStatus(r.status); loadLog(); } if (onChange) onChange(); toast('Contact logged'); } catch (e) { mrFail(e); } }, getSvcs); };
 }
 
@@ -6729,10 +7070,10 @@ async function mrTabQuotes(ctx) {
   const list = $('#mrQL', box); let seq = 0, rows = [];
   const draw = () => {
     $('#mrQn', box).textContent = rows.length + ' quote' + (rows.length === 1 ? '' : 's'); $('#mrQcsv', box).classList.toggle('hidden', !rows.length);
-    list.innerHTML = rows.length ? '<div class="tbl-wrap"><table class="list"><thead><tr><th>Supplier</th><th>Service</th><th>Price (USD)</th><th>Versus benchmark</th><th>Valid until</th><th>Saved by</th><th>Date</th><th></th></tr></thead><tbody>' +
-      rows.map((q, i) => '<tr data-i="' + i + '"><td data-sv="' + esc(q.supplier_name) + '"><b>' + esc(q.supplier_name || '—') + '</b></td><td class="wr">' + esc(mrSvcText(q) || q.category || '—') + '</td><td class="n" data-sv="' + esc(q.amount_usd) + '">' + esc(mrUsd(q.amount_usd)) + (q.currency && q.currency !== 'USD' && q.amount_local ? '<div class="hint">' + esc(q.amount_local + ' ' + q.currency) + '</div>' : '') + '</td>' +
+    list.innerHTML = rows.length ? '<div class="tbl-wrap"><table class="list"><thead><tr><th>Supplier</th><th>Service</th><th>Price</th><th>Versus benchmark</th><th>Valid until</th><th>Saved by</th><th>Date</th><th></th></tr></thead><tbody>' +
+      rows.map((q, i) => '<tr data-i="' + i + '"><td data-sv="' + esc(q.supplier_name) + '"><b>' + esc(q.supplier_name || '—') + '</b></td><td class="wr">' + esc(mrSvcText(q) || q.category || '—') + (mrQuoteOrigin(q) === 'team' ? '' : ' ' + mrQuoteOriginHtml(q)) + '</td><td class="n" data-sv="' + esc(mrQuotePrice(q).usd ? q.amount_usd : '') + '">' + esc(mrQuotePrice(q).text) + (mrQuotePrice(q).usd && q.currency && q.currency !== 'USD' && q.amount_local ? '<div class="hint">' + esc(q.amount_local + ' ' + q.currency) + '</div>' : '') + '</td>' +
         '<td data-sv="' + esc(mrNum((q.vs || {}).diff_pct) === null ? '' : q.vs.diff_pct) + '">' + mrBadgeHtml(q.vs) + '</td><td>' + esc(q.valid_until || '—') + '</td><td>' + esc(q.by || '—') + '</td><td data-sv="' + esc(mrMs(q.ts)) + '">' + esc(q.ts ? fmtDate(mrMs(q.ts)) : '—') + '</td>' +
-        '<td>' + (mrCanDel(q) ? '<button class="btn sm danger" data-del="' + esc(q.id) + '">Delete</button>' : '') + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="empty">' + (st.qp ? 'No quotes for this port yet. Open a supplier and add one.' : 'Pick a port to see the quotes saved for it.') + '</div>';
+        '<td style="white-space:nowrap">' + (mrQuoteOrigin(q) === 'ai' ? '<button class="btn sm" data-conf="' + esc(q.id) + '" aria-label="Confirm quote for ' + esc(q.supplier_name || 'this supplier') + '" title="I opened the source and the price is right">Confirm</button> ' : '') + (mrCanDel(q) ? '<button class="btn sm danger" data-del="' + esc(q.id) + '">Delete</button>' : '') + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="empty">' + (st.qp ? 'No quotes for this port yet. Open a supplier and add one.' : 'Pick a port to see the quotes saved for it.') + '</div>';
     srtTable(list, 'mr-quotes', ['text', 'text', 'num', 'num', 'text', 'text', 'date', null]);
   };
   const load = async () => {
@@ -6744,6 +7085,8 @@ async function mrTabQuotes(ctx) {
   mrComboBind(box, 'mrQp', { find: q => mrSuggestPorts(st.ports, q, 8), initial: () => mrPopular(st.ports, 8), onPick: p => { st.qp = p; load(); }, onClear: () => { if (st.qp) { st.qp = null; load(); } }, current: () => st.qp });
   box.onclick = async e => {
     if (e.target.closest('#mrQcsv')) { const tb = $('table', list), ordered = tb ? srtOrdered(rows, tb, 'data-i', q => String(rows.indexOf(q))) : rows; return mrDownload('quotes-' + (st.qp ? String(st.qp.port).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '-') : 'port') + '.csv', mrCsv(['Supplier', 'Port', 'Category', 'Subcategory', 'Language', 'Rate unit', 'Price USD', 'Currency', 'Price local', 'Valid until', 'Versus benchmark', 'Saved by', 'Date', 'Notes'], ordered.map(q => [q.supplier_name, q.port, q.category, q.subcat, q.lang, q.unit, q.amount_usd, q.currency, q.amount_local, q.valid_until, mrBadge(q.vs).text, q.by, q.ts ? new Date(mrMs(q.ts)).toISOString() : '', q.notes]))); }
+    const cf = e.target.closest('[data-conf]');
+    if (cf) { cf.disabled = true; try { await mrApi('api_mrQuoteConfirm', cf.dataset.conf); toast('Quote confirmed'); if (alive()) load(); } catch (x) { mrFail(x); if (cf.isConnected) cf.disabled = false; } return; }
     const d = e.target.closest('[data-del]'); if (!d) return;
     if (!await confirmBox('Delete this quote?', '<p style="margin:0">The quote is removed for everybody. This cannot be undone.</p>', 'Delete', 'danger')) return;
     try { await mrApi('api_mrQuoteDelete', d.dataset.del); toast('Quote deleted'); if (alive()) load(); } catch (x) { mrFail(x); }
