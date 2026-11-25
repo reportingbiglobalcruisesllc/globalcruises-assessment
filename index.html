@@ -61,16 +61,17 @@ label{display:block;font-weight:600;font-size:13px;margin:14px 0 5px}
 .center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.2px;margin-bottom:6px}
 .brand .logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--brand),var(--teal));display:grid;place-items:center;color:#fff;font-size:18px}
-.auth{min-height:100vh;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(360px,1fr)}
-.auth .hero{position:relative;overflow:hidden;color:#fff;padding:56px;display:flex;flex-direction:column;justify-content:flex-end;
-  background:radial-gradient(1200px 600px at 10% 0%,#1a7fd6 0%,transparent 60%),radial-gradient(900px 500px at 100% 100%,#0b8f84 0%,transparent 55%),linear-gradient(160deg,#071d36,#0a4a86)}
-.auth .hero svg{position:absolute;left:0;right:0;bottom:0;width:100%;opacity:.22}
-.auth .hero h1{font-size:40px;max-width:520px;position:relative}
-.auth .hero p{font-size:17px;max-width:480px;opacity:.9;margin:14px 0 0;position:relative}
-.auth .hero .pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px;position:relative}
-.auth .hero .pills span{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);padding:5px 12px;border-radius:99px;font-size:13px;font-weight:600;backdrop-filter:blur(4px)}
-.auth .side-form{display:flex;align-items:center;justify-content:center;padding:32px 24px;background:var(--panel)}
-.login{width:100%;max-width:380px}
+.auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:radial-gradient(900px 480px at 50% -8%,color-mix(in srgb,var(--brand-2) 20%,transparent),transparent 70%),var(--bg)}
+.login{width:100%;max-width:480px;background:var(--panel);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow-lg);padding:42px 40px 34px}
+.login .brand{justify-content:center;margin:0 0 14px}
+.login .brand .logo:not(.img){width:64px;height:64px;font-size:32px;border-radius:16px}
+.login h2{text-align:center;font-size:28px;margin:6px 0 6px}
+.login .sub{text-align:center;color:var(--muted);margin:0 0 10px;font-size:15.5px}
+.login label{font-size:14px;margin-top:16px}
+.login input[type=text],.login input[type=password]{padding:13px 14px;font-size:16px;border-radius:11px}
+.login #loginBtn{font-size:16px}
+.login .foot{display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:18px;text-align:center}
+@media (max-width:520px){.login{padding:30px 22px 26px;border-radius:18px}}
 @media (max-width:860px){.auth{grid-template-columns:1fr}.auth .hero{display:none}.auth .side-form{background:var(--bg)}}
 .home{width:100%;max-width:820px}
 .home ul{margin:8px 0 0 18px;padding:0} .home li{margin:6px 0}
@@ -201,7 +202,7 @@ input.xlf{font:15px ui-monospace,Consolas,monospace;flex:1;min-width:240px;width
 /* ---------- logo ---------- */
 .brand .logo.img,.logo.img{width:auto;height:auto;background:none;border-radius:0;display:block;flex:none}
 .logo.img img{height:56px;width:auto;max-width:240px;object-fit:contain;display:block}
-.login .logo.img img{height:76px;max-width:280px}
+.login .logo.img img{height:130px;max-width:380px}
 .logo.img + .bname{display:none}   /* the uploaded logo already shows the name */
 .bar .logo,.side .logo{display:inline-grid;vertical-align:middle;margin-right:8px}
 .bar .logo:not(.img),.side .logo:not(.img){width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--brand),var(--teal));color:#fff;place-items:center;font-size:15px}
@@ -280,26 +281,18 @@ table.list tbody tr.click{cursor:pointer} table.list tbody tr.click:hover{backgr
 
 <!-- ============ LOGIN ============ -->
 <section id="v-login" class="view auth">
-  <div class="hero">
-    <svg viewBox="0 0 1200 320" preserveAspectRatio="none" aria-hidden="true"><path fill="#fff" d="M0 190c150-70 300-70 450 0s300 70 450 0 200-60 300-30v160H0z"/><path fill="#fff" opacity=".5" d="M0 240c200-60 400-60 600 0s400 60 600 0v80H0z"/></svg>
-    <h1>Show us how you work with real data.</h1>
-    <p>Practical tasks in the tools you will use every day — not trick questions.</p>
-    <div class="pills"><span>Google Sheets</span><span>Power BI</span><span>SQL</span><span>Python</span><span>English</span><span>Revenue</span></div>
-  </div>
-  <div class="side-form">
-    <div class="login">
-      <div class="brand"><span class="logo">⚓</span><span class="bname">Global Cruises</span></div>
-      <h2 style="margin:14px 0 4px">Online assessment</h2>
-      <p class="muted" style="margin:0 0 8px">Sign in with the username and password you received by email.</p>
-      <form id="loginForm" autocomplete="off">
-        <label for="lu">Username</label><input id="lu" type="text" autocapitalize="off" spellcheck="false" required>
-        <label for="lp">Password</label><input id="lp" type="password" required>
-        <div id="loginErr" class="err hidden"></div>
-        <button id="loginBtn" class="btn primary" style="width:100%;margin-top:20px;padding:12px" type="submit">Sign in</button>
-      </form>
-      <p style="margin:14px 0 0"><button type="button" class="btn sm ghost" id="forgotBtn" style="padding-left:0">Forgot your password?</button></p>
-      <p class="hint" style="margin-top:6px">Use a laptop or desktop with Chrome or Edge. Trouble signing in? Contact Human Resources.</p>
-    </div>
+  <div class="login">
+    <div class="brand"><span class="logo">⚓</span><span class="bname">Global Cruises</span></div>
+    <h2>Online assessment</h2>
+    <p class="sub">Sign in with the username and password you received by email.</p>
+    <form id="loginForm" autocomplete="off">
+      <label for="lu">Username</label><input id="lu" type="text" autocapitalize="off" spellcheck="false" required>
+      <label for="lp">Password</label><input id="lp" type="password" required>
+      <div id="loginErr" class="err hidden"></div>
+      <button id="loginBtn" class="btn primary" style="width:100%;margin-top:22px;padding:14px" type="submit">Sign in</button>
+    </form>
+    <div class="foot"><button type="button" class="btn sm ghost" id="forgotBtn">Forgot your password? · Olvidé mi clave</button>
+      <span class="hint">Use a laptop or desktop with Chrome or Edge. Trouble signing in? Contact Human Resources.</span></div>
   </div>
 </section>
 
