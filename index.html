@@ -1214,23 +1214,37 @@ function bindVoice(q) {
       sr.onresult = ev => { let interim = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const t = ev.results[i][0].transcript; if (ev.results[i].isFinal) finalText += t + ' '; else interim += t; } tr.textContent = 'Transcript: ' + finalText + interim; };
       sr.onerror = () => {}; try { sr.start(); } catch (e) {}
     }
-    rec.onstop = async () => {
+    rec.onstop = () => {
+      // S.recPending lets finish() wait for the upload: submitting while it is still running used to leave the answer empty.
+      const job = (async () => {
       clearInterval(tick); if (sr) try { sr.stop(); } catch (e) {}
       if (S.rec && S.rec.rec === rec) S.rec = null;
       stream.getTracks().forEach(t => t.stop());
       const secs = Math.round((Date.now() - t0) / 1000), blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
       btn.textContent = '● Record again'; btn.disabled = true; info.textContent = 'Uploading…';
       prev.innerHTML = '<audio controls src="' + URL.createObjectURL(blob) + '" style="width:100%;max-width:420px;margin-top:6px"></audio>';
+      const keepText = () => {   // the transcript alone is gradable: never lose it if the audio file cannot be stored
+        const t = finalText.trim();
+        if (t && S.inExam && S.q.indexOf(q) >= 0) setAns(q, JSON.stringify({ fileId: '', transcript: t, seconds: secs }));
+      };
       try {
         const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
         await new Promise(r => setTimeout(r, 600));   // let the last transcript words arrive
+        keepText();
         const r = await api.api_uploadAudio(S.token, q.id, b64, blob.type, finalText.trim(), secs);
         if (S.inExam && S.q.indexOf(q) >= 0) {
           setAns(q, JSON.stringify(r)); showSaved(r);
           if (!btn.isConnected && S.q[S.i] === q) renderQ();   // the page was re-rendered while uploading: show the saved state
         }
-      } catch (e) { if (isSessionErr(e)) return sessionLost(); info.textContent = 'Upload failed: ' + e.message + ' — record again.'; if (!btn.isConnected && S.inExam) toast('The recording could not be uploaded: ' + e.message); }
+      } catch (e) {
+        keepText();
+        if (isSessionErr(e)) return sessionLost();
+        info.textContent = 'The audio file could not be uploaded (' + e.message + ')' + (finalText.trim() ? ', but your transcript was saved.' : '. Record again.');
+        if (!btn.isConnected && S.inExam) toast('The recording could not be uploaded: ' + e.message);
+      }
       btn.disabled = false;
+      })();
+      S.recPending = job; job.then(() => { if (S.recPending === job) S.recPending = null; });
     };
     t0 = Date.now(); rec.start(1000); logEv('mic_record', q.id);
     S.rec = { qid: q.id, rec, stop };                  // module scope: renderQ() stops it instead of orphaning the stream
@@ -1521,6 +1535,9 @@ async function finish(auto, retry) {
   S.finishing = true;
   const bo = busyOverlay(auto ? 'Time is up — submitting your answers…' : 'Checking your code one last time…');
   try {
+    // a recording still being made or uploaded must reach the server before the attempt is closed
+    if (S.rec) { const r = S.rec; S.rec = null; try { r.stop(); } catch (e) {} await new Promise(r2 => setTimeout(r2, 300)); }   // onstop fires a moment later and creates the pending upload
+    if (S.recPending) { bo.set('Saving your recording…'); await Promise.race([S.recPending, new Promise(r => setTimeout(r, auto ? 8000 : 30000))]); }
     // re-run every code answer whose output is stale, so grading reflects the FINAL code
     const stale = S.q.filter(q => isCode(q) && isAnswered(q) && ansOf(q.id).outFor !== ansOf(q.id).response);
     const t0 = Date.now();
