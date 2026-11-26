@@ -2935,7 +2935,9 @@ function srcPlaceFilter(list, only) { return only ? (list || []).filter(r => !sr
 /* the chips under the headline: where the person lives (muted text when the profile does not say), a small "Other place" / "Same country" chip */
 function srcPlaceMetaHtml(r) {
   r = r || {}; const loc = String(r.location || '').replace(/\s+/g, ' ').trim(), m = srcLocMatch(r), searched = String(r.loc || '').replace(/\s+/g, ' ').trim();
-  let h = loc ? '<span class="chip' + (m === 'no' ? ' warn' : '') + '" title="' + esc('Where the profile says this person is: ' + loc) + '">' + esc(loc) + '</span>' : '<span class="chip muted" title="The profile text does not say where this person is">Location not shown</span>';
+  const via = r.location_via === 'link' || r.location_via === 'inferred' ? r.location_via : '';   // a country that the server deduced (the profile text did not give one)
+  let h = loc ? '<span class="chip' + (m === 'no' ? ' warn' : via ? ' muted' : '') + '" title="' + esc(via === 'link' ? 'Deduced from the LinkedIn country site of the link: the profile text does not give a city' : via ? 'Deduced from the headline or description: the profile text does not give a location' : 'Where the profile says this person is: ' + loc) + '">' + (via ? '≈ ' : '') + esc(loc) + '</span>' : '<span class="chip muted" title="The profile text does not say where this person is">Location not shown</span>';
+  if (r.title_only_in_text === true) h += '<span class="chip muted" title="The job title is not in the headline, only further down the description; its score is lower">Title only in the description</span>';
   if (m === 'no') h += '<span class="chip warn" title="' + esc('The profile is not in the place you searched' + (searched ? ' (' + searched + ')' : '') + '; its score is lower') + '">Other place</span>';
   else if (m === 'country') h += '<span class="chip muted" title="Lives in the same country but not in the searched place">Same country</span>';
   return h;
@@ -2966,9 +2968,10 @@ function srcQueryObj(q, key, loc, intent) {
 }
 /* ---- Excel sheets (sheets for xlsxBuild; empty columns are dropped there) ---- */
 const SRC_MATCH_TEXT = { yes: 'Same place', country: 'Same country only', no: 'Other place', unknown: 'Not known' };
+const SRC_LOCVIA_TEXT = { text: 'The profile text', link: 'Deduced from the LinkedIn country site', inferred: 'Deduced from the headline or description' };
 const SRC_XL_RESULT_COLS = [
   { key: 'score', header: 'Score', type: 'number', fmt: 'int' }, { key: 'match', header: 'Matches searched place' }, { key: 'name', header: 'Name', width: 28 }, { key: 'headline', header: 'Headline', width: 44 },
-  { key: 'location', header: 'Location (from the profile)', width: 28 }, { key: 'searched', header: 'Searched place', width: 22 }, { key: 'source', header: 'Source' }, { key: 'sourceId', header: 'Source id' },
+  { key: 'location', header: 'Location (from the profile)', width: 28 }, { key: 'locSource', header: 'Where the location comes from', width: 32 }, { key: 'titleIn', header: 'Job title found in', width: 24 }, { key: 'searched', header: 'Searched place', width: 22 }, { key: 'source', header: 'Source' }, { key: 'sourceId', header: 'Source id' },
   { key: 'url', header: 'Profile URL', type: 'url', width: 40 }, { key: 'snippet', header: 'Snippet', width: 60, wrap: true }, { key: 'query', header: 'Query used', width: 40 }, { key: 'engine', header: 'Engine' },
   { key: 'found', header: 'Found on', type: 'date' }, { key: 'status', header: 'Pipeline status' }, { key: 'org', header: 'Organisation', width: 28 }, { key: 'role', header: 'Role' }, { key: 'type', header: 'Directory type' },
   { key: 'email', header: 'Email' }, { key: 'phone', header: 'Phone' }, { key: 'web', header: 'Website', type: 'url', width: 32 }, { key: 'linkedin', header: 'LinkedIn', type: 'url', width: 32 }, { key: 'address', header: 'Address', width: 30 }
@@ -2979,7 +2982,8 @@ const srcScoreCell = v => v === '' || v === null || v === undefined || typeof v 
 function srcResultSheet(R, o) {
   o = o || {};
   return { name: 'Results', columns: SRC_XL_RESULT_COLS, rows: (R || []).map(r => ({
-    score: srcScoreCell(r.score), match: SRC_MATCH_TEXT[srcLocMatch(r)], name: srcNameOf(r), headline: r.headline, location: r.location, searched: r.loc === 'Worldwide' ? '' : r.loc, source: r.sourceLabel, sourceId: r.source, url: r.url, snippet: r.snippet,
+    score: srcScoreCell(r.score), match: SRC_MATCH_TEXT[srcLocMatch(r)], name: srcNameOf(r), headline: r.headline, location: r.location, locSource: r.directory ? 'Directory' : r.location ? SRC_LOCVIA_TEXT[r.location_via] || SRC_LOCVIA_TEXT.text : 'Not shown by the result',
+    titleIn: r.title_only_in_text === true ? 'Only in the description' : '', searched: r.loc === 'Worldwide' ? '' : r.loc, source: r.sourceLabel, sourceId: r.source, url: r.url, snippet: r.snippet,
     query: r.query === 'directory' ? '' : r.query, engine: r.engine ? (o.engineName ? o.engineName(r.engine) || r.engine : r.engine) : '', found: Number(r.found_ms) > 0 ? Number(r.found_ms) : '', status: o.status ? o.status(r) : '',
     org: r.org, role: r.role, type: r.type, email: r.email, phone: r.phone, web: r.web, linkedin: r.linkedin, address: r.address })) };
 }
@@ -8184,12 +8188,24 @@ function mrSampleSheet(rows, o) {
     paxMin: r.capacity_min, paxMax: r.capacity_max, hours: r.hours, seen: mrMs(r.seen_on) || (mrYmdOk(r.seen_on) ? r.seen_on : ''), url: r.url, note: r.note, category: mrNa(r.category) ? '' : r.category, subcat: mrNa(r.subcat) ? '' : r.subcat, unitRaw: mrNa(r.unit) ? '' : r.unit, legRaw: mrNa(r.leg) ? '' : r.leg, langRaw: mrNa(r.lang) ? '' : r.lang })) };
 }
 const MR_SRC_TEXT = { manual: 'Added by hand', ai: 'Found by AI', import: 'Imported' };
-function mrSupplierSheet(rows) {
+/* the "How it was added" filter: Imported = the tour operators of the OTA / shore-excursion listings; Found by AI and Added by hand = direct providers */
+function mrSrcOptions(cur) { return [['', 'Any origin'], ['ai', 'Found by AI'], ['manual', 'Added by hand'], ['import', 'Imported (OTA listings)']].map(o => '<option value="' + o[0] + '"' + (String(cur || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join(''); }
+/* what the file knows about the price of each supplier: its own quotes (by supplier key) and the observed rates of its listing (the same supplier name or the same listing link) -> {key: {n, min, max}} */
+function mrSupplierRateInfo(rows, quotes, samples) {
+  const byName = {}, byUrl = {}, out = {};
+  (rows || []).forEach(r => { const n = mrNorm(r.name); if (n && !byName[n]) byName[n] = r.key; if (r.url && !byUrl[r.url]) byUrl[r.url] = r.key; });
+  const add = (key, v) => { v = mrNum(v); if (!key || !(v > 0)) return; const o = out[key] || (out[key] = { n: 0, min: v, max: v }); o.n++; o.min = Math.min(o.min, v); o.max = Math.max(o.max, v); };
+  (quotes || []).forEach(q => add(q.supplier_key, q.amount_usd));
+  (samples || []).forEach(s => add((s.url && byUrl[s.url]) || byName[mrNorm(s.supplier_name)], s.amount_usd));
+  return out;
+}
+function mrSupplierSheet(rows, info) {
+  info = info || {};
   return { name: 'Suppliers', columns: [{ key: 'name', header: 'Supplier', width: 30 }, { key: 'entity', header: 'Company / individual' }, { key: 'category', header: 'Category', width: 20 }, { key: 'categoryRaw', header: 'Category (as saved)', width: 20 }, { key: 'status', header: 'Status' }, { key: 'owner', header: 'Owner' }, { key: 'port', header: 'Port' }, { key: 'country', header: 'Country' }, { key: 'ota', header: 'Source (OTA / directory)', width: 22 },
-    { key: 'person', header: 'Contact person', width: 22 }, { key: 'role', header: 'Role' }, { key: 'phone', header: 'Phone' }, { key: 'email', header: 'Email', width: 28 }, { key: 'web', header: 'Website', type: 'url', width: 32 }, { key: 'url', header: 'Listing link', type: 'url', width: 32 }, { key: 'access', header: 'Port access permit', width: 24 }, { key: 'quotes', header: 'Quotes', type: 'number', fmt: 'int' },
+    { key: 'person', header: 'Contact person', width: 22 }, { key: 'role', header: 'Role' }, { key: 'phone', header: 'Phone' }, { key: 'email', header: 'Email', width: 28 }, { key: 'web', header: 'Website', type: 'url', width: 32 }, { key: 'url', header: 'Listing link', type: 'url', width: 32 }, { key: 'access', header: 'Port access permit', width: 24 }, { key: 'quotes', header: 'Quotes', type: 'number', fmt: 'int' }, { key: 'rateN', header: 'Rates in this file', type: 'number', fmt: 'int' }, { key: 'rateRange', header: 'Price range (USD)' },
     { key: 'blocked', header: 'Do not contact' }, { key: 'origin', header: 'How it was added' }, { key: 'notes', header: 'Notes', width: 50, wrap: true }, { key: 'created', header: 'Created', type: 'date' }, { key: 'updated', header: 'Updated', type: 'date' }, { key: 'key', header: 'Id' }],
   rows: (rows || []).map(r => { const nc = !!r.blocked; return ({ name: r.name, entity: r.entity === 'company' ? 'Company' : r.entity === 'individual' ? 'Individual' : '', category: r.category ? mrCatLabel(r.category) : '', categoryRaw: r.category, status: mrStat2(r.status), owner: r.owner, port: r.port, country: r.country, ota: r.ota, person: nc ? '' : r.person, role: nc ? '' : r.role, phone: nc ? '' : r.phone, email: nc ? '' : r.email, web: nc ? '' : r.web, url: nc ? '' : r.url, access: r.access,   // do-not-contact: name, place, category and the flag stay; nothing that could reach them (the notes of an AI find carry the contact page)
-    quotes: Number(r.quotes) || 0, blocked: r.blocked ? 'Yes' : '', origin: MR_SRC_TEXT[r.source] || r.source, notes: nc ? '' : r.notes, created: mrIso(r.created_ms), updated: mrIso(r.updated_ms), key: r.key }); }) };
+    quotes: Number(r.quotes) || 0, rateN: (info[r.key] || {}).n || '', rateRange: info[r.key] ? (info[r.key].min === info[r.key].max ? info[r.key].min.toFixed(2) : info[r.key].min.toFixed(2) + ' – ' + info[r.key].max.toFixed(2)) : '', blocked: r.blocked ? 'Yes' : '', origin: MR_SRC_TEXT[r.source] || r.source, notes: nc ? '' : r.notes, created: mrIso(r.created_ms), updated: mrIso(r.updated_ms), key: r.key }); }) };
 }
 /* the results of a "Find with AI" search (nothing is saved yet) as Excel sheets: one row per provider found, one row per published rate, and what was searched.
    A do-not-contact entry keeps only its name, place, role and the flag: no contact, rate or source leaves the page. */
@@ -8303,7 +8319,7 @@ async function mrMyPassword() {
   if (v.n !== v.r) return toast('The new passwords do not match.', 5000);
   try { await mrApi('api_mrChangePassword', v.c, v.n); toast('Password changed. Use the new one next time you sign in.', 5000); } catch (e) { mrFail(e); }
 }
-function mrState() { return ADM.mr || (ADM.mr = { tab: 'benchmark', run: 0, ports: null, portsInfo: null, port: null, bench: null, benchSeq: 0, services: null, cmpKey: '', cmpCache: {}, sup: { port: null, category: '', status: '', q: '', offset: 0, limit: 100 }, qp: null, ro: null, timer: 0 }); }
+function mrState() { return ADM.mr || (ADM.mr = { tab: 'benchmark', run: 0, ports: null, portsInfo: null, port: null, bench: null, benchSeq: 0, services: null, cmpKey: '', cmpCache: {}, sup: { port: null, category: '', status: '', source: '', q: '', offset: 0, limit: 100 }, qp: null, ro: null, timer: 0 }); }
 /* the AI finder state lives with the page state (ADM.mr), so results survive a tab change; a call still running when the page is redrawn is cancelled (guard) */
 function mrAiState(st) { return st.ai || (st.ai = { open: false, places: [], roles: ['guide'], customRoles: [], lang: [], busy: false, err: '', res: null, resFor: null, remaining: null, added: {}, adding: {}, guard: mrAiLatest() }); }
 const MR_STOP = { mrStop: true };
@@ -8587,13 +8603,13 @@ async function mrTabSuppliers(ctx) {
   box.innerHTML = mrSpin('Loading…'); await mrLoadPorts(st); if (!alive()) return;
   box.innerHTML = '<div class="toolbar mr-bar">' + mrComboHtml('mrSp', 'Any place (type a port, city or region)…', 'Filter by place', f.port ? mrPortLabel(f.port) : '') +
     '<input type="text" id="mrSc" list="mrScL" placeholder="Category" aria-label="Category" value="' + esc(f.category) + '" style="width:150px" autocomplete="off"><datalist id="mrScL">' + MR_CATEGORIES.map(c => '<option value="' + esc(c[0]) + '" label="' + esc(c[1]) + '">').join('') + '</datalist>' +
-    '<select id="mrSs" aria-label="Status" style="width:auto"></select><input type="search" id="mrSq" class="srt-q" placeholder="Search name, contact, notes…" aria-label="Search suppliers" value="' + esc(f.q) + '" autocomplete="off">' +
+    '<select id="mrSs" aria-label="Status" style="width:auto"></select><select id="mrSsrc" aria-label="How it was added" title="Imported = tour operators of the shore-excursion listings (OTAs); Found by AI and Added by hand = direct providers" style="width:auto">' + mrSrcOptions(f.source) + '</select><input type="search" id="mrSq" class="srt-q" placeholder="Search name, contact, notes…" aria-label="Search suppliers" value="' + esc(f.q) + '" autocomplete="off">' +
     '<span class="sp"></span><span class="hint" id="mrSn"></span><button class="btn" id="mrSx" title="Excel file with every supplier of this filter">⬇ Export Excel</button><button class="btn" id="mrAi" aria-expanded="false">✨ Find with AI</button><button class="btn primary" id="mrNew">+ New supplier</button></div><div id="mrAiBox"></div><div id="mrSL"></div><div class="mr-pager hidden" id="mrPg"></div>';
   const list = $('#mrSL', box); let rows = [], total = 0, seq = 0, counts = {};
   const drawStatus = () => { $('#mrSs', box).innerHTML = mrOpt('', 'Any status', !f.status) + MR_STATUSES.map(s => mrOpt(s[0], s[1] + (counts[s[0]] != null ? ' (' + counts[s[0]] + ')' : ''), f.status === s[0])).join(''); };
   const load = async () => {
     const my = ++seq; list.innerHTML = mrSpin('Loading suppliers…');
-    let r; try { r = await mrApi('api_mrSuppliers', { port: f.port ? (f.port.port || f.port.city) : '', country: f.port ? (f.port.country || '') : '', category: mrCatFilter(f.category), status: f.status, q: f.q, limit: f.limit, offset: f.offset }); } catch (e) { const m = mrMsg(e); if (m && alive() && my === seq) list.innerHTML = mrErr(m); return; }
+    let r; try { r = await mrApi('api_mrSuppliers', { port: f.port ? (f.port.port || f.port.city) : '', country: f.port ? (f.port.country || '') : '', category: mrCatFilter(f.category), status: f.status, source: f.source || '', q: f.q, limit: f.limit, offset: f.offset }); } catch (e) { const m = mrMsg(e); if (m && alive() && my === seq) list.innerHTML = mrErr(m); return; }
     if (!alive() || my !== seq) return; rows = Array.isArray(r.rows) ? r.rows : []; total = Number(r.total) || 0; counts = r.statuses && typeof r.statuses === 'object' && !Array.isArray(r.statuses) ? r.statuses : {}; drawStatus(); draw();
   };
   const draw = () => {
@@ -8601,7 +8617,7 @@ async function mrTabSuppliers(ctx) {
     list.innerHTML = '<div class="tbl-wrap"><table class="list"><thead><tr><th>Supplier</th><th>Port</th><th>Country</th><th>Category</th><th>Status</th><th>Owner</th><th>Contact</th><th>Quotes</th><th>Updated</th></tr></thead><tbody>' +
       (rows.length ? rows.map((r, i) => '<tr class="click" tabindex="0" data-k="' + i + '"><td data-sv="' + esc(r.name) + '"><b>' + esc(r.name) + '</b>' + (MR_AI_ENTITY[r.entity] && r.entity !== 'unknown' ? ' <span class="chip ' + MR_AI_ENTITY[r.entity][1] + '">' + MR_AI_ENTITY[r.entity][0] + '</span>' : '') + (r.blocked ? ' <span class="chip bad" title="On the do-not-contact list">Do not contact</span>' : '') + (r.ota ? '<div class="hint">' + esc(r.ota) + '</div>' : '') + '</td><td>' + esc(r.port || '—') + '</td><td>' + esc(r.country || '—') + '</td><td data-sv="' + esc(r.category || '') + '"' + (r.category ? ' title="' + esc(r.category) + '"' : '') + '>' + esc(r.category ? mrCatLabel(r.category) : '—') + '</td>' +
         '<td data-sv="' + esc(mrStat(r.status)[1]) + '">' + mrStatChip(r.status) + '</td><td>' + esc(r.owner || '—') + '</td><td>' + esc(r.person || '—') + '</td><td class="n" data-sv="' + esc(Number(r.quotes) || 0) + '">' + esc(Number(r.quotes) || 0) + '</td><td data-sv="' + esc(mrMs(r.updated_ms)) + '">' + esc(mrMs(r.updated_ms) ? fmtDate(mrMs(r.updated_ms)) : '—') + '</td></tr>').join('') :
-        '<tr><td colspan="9" class="empty">' + (total || f.q || f.port || f.category || f.status ? 'No supplier matches these filters.' : 'No suppliers yet. An admin can import the directory, or add one with “+ New supplier”.') + '</td></tr>') + '</tbody></table></div>';
+        '<tr><td colspan="9" class="empty">' + (total || f.q || f.port || f.category || f.status || f.source ? 'No supplier matches these filters.' : 'No suppliers yet. An admin can import the directory, or add one with “+ New supplier”.') + '</td></tr>') + '</tbody></table></div>';
     srtTable(list, 'mr-sup', ['text', 'text', 'text', 'text', 'text', 'text', 'text', 'num', 'date']);
     const pg = $('#mrPg', box), from = f.offset + 1, to = f.offset + rows.length;
     pg.classList.toggle('hidden', total <= f.limit);
@@ -8711,6 +8727,7 @@ async function mrTabSuppliers(ctx) {
   mrComboBind(box, 'mrSp', Object.assign(mrComboFree(st), { onPick: p => { f.port = p; reload(); if (A.open && A.places.length <= 1 && !A.busy) { A.places = [p]; A.guard.cancel(); aiShow(); } }, onClear: () => { if (f.port) { f.port = null; reload(); } }, current: () => f.port }));
   $('#mrSc', box).onchange = e => { f.category = e.target.value.trim(); reload(); };
   $('#mrSs', box).onchange = e => { f.status = e.target.value; reload(); };
+  $('#mrSsrc', box).onchange = e => { f.source = e.target.value; reload(); };
   $('#mrSq', box).oninput = e => { f.q = e.target.value.trim(); clearTimeout(st.timer); st.timer = setTimeout(() => { if (alive()) reload(); }, 300); };
   box.onclick = e => {
     if (e.target.closest('#mrSx')) return mrExportSuppliers(f);
@@ -8733,13 +8750,24 @@ function mrAiExport(A) {
     toast(mrXlsxMsg(out.sheets), 7000);
   } catch (x) { mrFail(x); }
 }
-/* every supplier of the filter in an Excel file (all pages, up to a cap) */
+/* every supplier of the filter in an Excel file (all pages, up to a cap) with their rates: the Suppliers sheet (with the price range of each), the Quotes the team saved for them and, when a place is chosen,
+   the observed rates of their listings (the OTA / shore-excursion prices behind an imported supplier). Without a place only the quotes are added: the rates of every port are too many for one file. */
 async function mrExportSuppliers(f) {
-  const bo = busyOverlay('Preparing the Excel file…');
+  const bo = busyOverlay('Preparing the Excel file…'), notes = [], port = f.port ? { port: f.port.port || f.port.city, country: f.port.country || '' } : null;
+  const opt = async (what, fn) => { try { return await fn(); } catch (e) { if (e === MR_STOP || (e && e.mrStop)) throw e; notes.push(what); return null; } };
   try {
-    const r = await mrSuppliersAll(mrApi, { port: f.port ? (f.port.port || f.port.city) : '', country: f.port ? (f.port.country || '') : '', category: mrCatFilter(f.category), status: f.status, q: f.q }, MR_XLSX_SUP_CAP); bo.close();
-    if (!r.rows.length) return toast('No suppliers to export.');
-    const out = xlsxDownload(xlsxFileName('suppliers ' + (f.port ? mrPortLabel(f.port) : 'all')), [mrSupplierSheet(r.rows)]); toast(mrXlsxMsg(out.sheets, { suppliers: r }), 7000);
+    const r = await mrSuppliersAll(mrApi, { port: port ? port.port : '', country: port ? port.country : '', category: mrCatFilter(f.category), status: f.status, source: f.source || '', q: f.q }, MR_XLSX_SUP_CAP);
+    if (!r.rows.length) { bo.close(); return toast('No suppliers to export.'); }
+    const keys = new Set(r.rows.map(x => x.key)), names = new Set(r.rows.map(x => mrNorm(x.name))), urls = new Set(r.rows.map(x => x.url).filter(Boolean));
+    const quotes = await opt('quotes', async () => { const q = await mrApi('api_mrQuotes', port ? { port: port.port, country: port.country } : {}); return (Array.isArray(q && q.rows) ? q.rows : []).filter(x => keys.has(x.supplier_key)); });
+    const samples = port ? await opt('individual rates', () => mrSamplesAll(mrApi, port, null, { all: true, onPage: n => bo.set('Reading the rates… ' + mrThousands(n)) })) : null;
+    const rates = samples ? samples.rows.filter(s => names.has(mrNorm(s.supplier_name)) || (s.url && urls.has(s.url))) : [];
+    bo.close();
+    const sheets = [mrSupplierSheet(r.rows, mrSupplierRateInfo(r.rows, quotes, rates))];
+    if (quotes && quotes.length) sheets.push(mrQuoteSheet(quotes));
+    if (rates.length) sheets.push(Object.assign(mrSampleSheet(rates, { port: port.port, country: port.country }), { name: 'Rates of the suppliers' }));
+    const out = xlsxDownload(xlsxFileName('suppliers ' + (f.port ? mrPortLabel(f.port) : 'all')), sheets);
+    toast(mrXlsxMsg(out.sheets, { suppliers: r, samples: samples, notes: notes }) + (port ? '' : ' Pick a place to add the observed rates of their listings.'), 9000);
   } catch (e) { bo.close(); mrFail(e); }
 }
 
