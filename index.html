@@ -2916,8 +2916,8 @@ function srcConnCardHtml(c, admin) {
 const SRC_SOURCES = [
   { key: 'linkedin', label: 'LinkedIn', site: 'site:linkedin.com/in' }, { key: 'upwork', label: 'Upwork', site: 'site:upwork.com/freelancers' },
   { key: 'workana', label: 'Workana', site: 'site:workana.com/freelancer' }, { key: 'torre', label: 'Torre', site: 'site:torre.ai' },
-  { key: 'xing', label: 'XING', site: 'site:xing.com/profile' }, { key: 'behance', label: 'Behance', site: 'site:behance.net' },
-  { key: 'github', label: 'GitHub', site: 'site:github.com' }
+  { key: 'xing', label: 'XING', site: 'site:xing.com/profile' }, { key: 'behance', label: 'Behance', site: 'site:behance.net', tip: 'Portfolios of designers: only useful for design roles. For other areas leave it off: every source uses one AI search for each place.' },
+  { key: 'github', label: 'GitHub', site: 'site:github.com', tip: 'Profiles of software developers: only useful for technical roles (Python, SQL, data engineering). For other areas leave it off: every source uses one AI search for each place.' }
 ];
 /* saved state that still lists a source that no longer exists (the removed "web", or anything unknown) is cleaned: only real sources stay, and at least one is on */
 function srcCleanSources(src) {
@@ -7811,7 +7811,7 @@ async function mrStreamSamples(file, o) {
 /* ---------- AI finder (providers and published rates found by the AI web search; always to be confirmed by a person) ----------
    Needs esc() of the page (HTML escaping). Everything the AI returns is cleaned here before it is drawn or sent back to the server:
    strings are capped, links must be http(s) without credentials, emails and phones must look right, amounts must be finite numbers. */
-const MR_AI_KINDS = [['guide', 'Guides'], ['staff', 'Excursion staff (hosts, escorts, coordinators)'], ['driver', 'Drivers'], ['transfer', 'Transfers'], ['car_rental', 'Car rental'], ['vehicle_charter', 'Vehicle charter (minivan / bus)'], ['agency', 'Tour agencies']];
+const MR_AI_KINDS = [['guide', 'Guides'], ['staff', 'Excursion staff (hosts, escorts, coordinators)'], ['driver', 'Drivers'], ['transfer', 'Transfers'], ['car_rental', 'Car rental'], ['vehicle_charter', 'Vehicle charter (minivan / bus)'], ['coach', 'Buses / coaches for large groups (with their seats)'], ['agency', 'Tour agencies']];
 const MR_CATEGORIES = [['Transporte', 'Transport'], ['Guía Oficial', 'Official guide'], ['Conductor', 'Driver'], ['Alquiler de vehículos', 'Car rental'], ['Transfer', 'Transfer'], ['Agencia receptiva', 'Tour agency'], ['Staff de excursiones', 'Excursion staff']];   // suggestions only: free text stays allowed
 const MR_AI_ENTITY = { company: ['Company', 'info'], individual: ['Individual', 'info mr-ind'], unknown: ['Unknown', ''] };   // the dashed border tells Individual from Company without relying on colour
 const MR_AI_CONF = { high: ['High confidence', 'ok'], medium: ['Medium confidence', 'info'], low: ['Low confidence', 'warn'] };
@@ -7820,6 +7820,10 @@ const MR_AI_MAX = 12;
 const MR_AI_LANGS = ['English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Chinese', 'Japanese', 'Russian', 'Arabic', 'Dutch', 'Korean'], MR_AI_LANG_MAX = 5;
 /* a count that came from the server: a whole number >= 0, or null when it is missing or not a number */
 function mrAiNum(v) { return v === null || v === undefined || v === '' || typeof v === 'boolean' || !isFinite(Number(v)) ? null : Math.max(0, Math.floor(Number(v))); }
+/* a passenger capacity: a whole number of seats from 1 to 120, else null */
+function mrAiSeats(v) { const n = typeof v === 'number' ? v : (typeof v === 'string' && /^\s*\d{1,3}\s*$/.test(v) ? Number(v) : NaN); return isFinite(n) && n >= 1 && n <= 120 && Math.floor(n) === n ? n : null; }
+/* the vehicles of a provider: [{type, seats}] (up to 6; the type up to 60 characters, the seats a whole number or null) */
+function mrAiVehicles(list) { const out = []; (Array.isArray(list) ? list : []).slice(0, 12).forEach(x => { if (!x || typeof x !== 'object' || Array.isArray(x) || out.length >= 6) return; const type = mrAiStr(x.type, 60), seats = mrAiSeats(x.seats); if (type || seats) out.push({ type: type, seats: seats }); }); return out; }
 function mrAiStr(v, n) { return String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n); }
 /* the languages asked for: a list (or a comma separated text), cleaned, no repeats, at most 5 */
 function mrAiLangs(v) { const arr = Array.isArray(v) ? v : String(v == null ? '' : v).split(/\s*[,;]\s*/), out = []; arr.forEach(x => { const t = mrAiStr(x, 40); if (t && out.length < MR_AI_LANG_MAX && !out.some(y => mrNorm(y) === mrNorm(t))) out.push(t); }); return out; }
@@ -7833,7 +7837,7 @@ function mrAiAmount(v) { const n = typeof v === 'number' ? v : (MR_NUM_RE.test(S
 function mrAiRate(r) {
   r = r || {}; const amount = mrAiAmount(r.amount), cur = mrAiStr(r.currency, 12).toUpperCase(); if (amount === null || !/^[A-Z]{3}$/.test(cur)) return null;
   const unit = mrAiStr(r.unit, 80), url = mrSafeUrl(r.source_url);
-  return { service: mrAiStr(r.service, 120), amount: amount, currency: cur, unit: unit, note: mrAiStr(r.note, 300), source_url: url, consumer_price: r.consumer_price === true || mrAiNotService(unit, url) };   // consumer_price: a tour price for a traveller (or a price with no service unit), not a rate for a service
+  return { service: mrAiStr(r.service, 120), amount: amount, currency: cur, unit: unit, seats: mrAiSeats(r.seats), note: mrAiStr(r.note, 300), source_url: url, consumer_price: r.consumer_price === true || mrAiNotService(unit, url) };   // consumer_price: a tour price for a traveller (or a price with no service unit), not a rate for a service
 }
 /* the server's rule, repeated so the count of "Add with rates (N)" is the number of quotes that will really be saved: a consumer word in the unit wins ("per day per person", "7-day tour per person"),
    a unit that is not a service unit (blank, "per tour", "from") or a booking marketplace is never a service rate; tour lengths ("3 hours") and capacities ("up to 6 people") are not units */
@@ -7858,11 +7862,13 @@ let MR_AI_SEQ = 0;
 /* one candidate as the server sent it -> the safe shape used by the page (null when it has no name). _k identifies it in this page. */
 function mrAiClean(c) {
   c = c || {}; const name = mrAiStr(c.name, 200); if (!name) return null;
-  const out = { _k: ++MR_AI_SEQ, name: name, entity: MR_AI_ENTITY[c.entity] ? c.entity : 'unknown', category: mrAiStr(c.category, 80), url: '', email: '', phone: '', contact_source: '', rates: [], source_urls: [], confidence: MR_AI_CONF[c.confidence] ? c.confidence : 'low', notes: mrAiStr(c.notes, 500), blocked: c.blocked === true, port: mrAiStr(c.port, 100), country: mrAiStr(c.country, 80), exists: c.exists === true, languages: mrAiLangs(c.languages), role: mrAiStr(c.role || c.kind, 60) };
+  const out = { _k: ++MR_AI_SEQ, name: name, entity: MR_AI_ENTITY[c.entity] ? c.entity : 'unknown', category: mrAiStr(c.category, 80), url: '', email: '', phone: '', contact_source: '', rates: [], vehicles: [], max_seats: null, capacity_unknown: false, source_urls: [], confidence: MR_AI_CONF[c.confidence] ? c.confidence : 'low', notes: mrAiStr(c.notes, 500), blocked: c.blocked === true, port: mrAiStr(c.port, 100), country: mrAiStr(c.country, 80), exists: c.exists === true, languages: mrAiLangs(c.languages), role: mrAiStr(c.role || c.kind, 60) };
   if (out.blocked) return out;   // do-not-contact: nothing else is kept, so nothing can be shown or sent
   out.url = mrSafeUrl(c.url); out.email = mrEmailOk(c.email) ? String(c.email).trim() : ''; out.phone = mrAiPhone(c.phone); out.contact_source = mrSafeUrl(c.contact_source);
   out.rates = (Array.isArray(c.rates) ? c.rates : []).slice(0, 20).map(mrAiRate).filter(Boolean);
   out.source_urls = (Array.isArray(c.source_urls) ? c.source_urls : []).map(mrSafeUrl).filter(Boolean).slice(0, 10);
+  out.vehicles = mrAiVehicles(c.vehicles); out.capacity_unknown = c.capacity_unknown === true;
+  out.max_seats = mrAiSeats(c.max_seats) || out.vehicles.concat(out.rates).reduce((m, x) => Math.max(m, x.seats || 0), 0) || null;   // the server's figure, else the largest capacity listed
   return out;
 }
 /* one answer of api_mrAiFind -> {groups: [{port, country, warning, candidates}], candidates (all of them), warning, provider, searched_at, remaining_today, calls_used}.
@@ -7872,7 +7878,7 @@ function mrAiCleanResult(r, req) {
   const fix = (c, g) => { const o = mrAiClean(c); if (!o) return null; if (!o.port) o.port = g.port; if (!o.country) o.country = g.country; if (!o.role) o.role = mrAiStr(c && (c.role || c.kind), 60) || only; return o; };
   let groups;
   if (Array.isArray(r.groups) && r.groups.length) {
-    groups = r.groups.slice(0, MR_AI_PLACE_MAX).map(g => { g = g || {}; const gg = { port: mrAiStr(g.port, 100), country: mrAiStr(g.country, 80), warning: mrAiStr(g.warning, 300), candidates: [] }; gg.candidates = (Array.isArray(g.candidates) ? g.candidates : []).slice(0, MR_AI_GROUP_MAX).map(c => fix(c, gg)).filter(Boolean); return gg; });
+    groups = r.groups.slice(0, MR_AI_BATCH).map(g => { g = g || {}; const gg = { port: mrAiStr(g.port, 100), country: mrAiStr(g.country, 80), warning: mrAiStr(g.warning, 300), hidden_small: Math.max(0, Math.floor(Number(g.hidden_small)) || 0), candidates: [] }; gg.candidates = (Array.isArray(g.candidates) ? g.candidates : []).slice(0, MR_AI_GROUP_MAX).map(c => fix(c, gg)).filter(Boolean); return gg; });
   } else {
     const p0 = Array.isArray(req.places) && req.places.length === 1 ? req.places[0] : req.port && typeof req.port === 'string' ? { port: req.port, country: req.country } : null;
     const gg = { port: p0 ? mrAiStr(p0.port, 100) : '', country: p0 ? mrAiStr(p0.country, 80) : '', warning: '', candidates: [] };
@@ -7889,6 +7895,29 @@ async function mrAiGuarded(guard, run, clean) {
   return guard.ok(my) ? { res: clean(r) } : { stale: true };
 }
 function mrAiRunFind(call, guard, req) { return mrAiGuarded(guard, () => call('api_mrAiFind', req), r => mrAiCleanResult(r, req)); }
+/* more than 5 places: the server answers 5 places per call (each one is a paid AI search with its own limits), so the search goes in batches of 5, one after the other; the answers are ONE list, place by place */
+function mrAiBatches(req) { const out = []; for (let i = 0; i < req.places.length; i += MR_AI_BATCH) out.push(Object.assign({}, req, { places: req.places.slice(i, i + MR_AI_BATCH) })); return out; }
+/* the cleaned answers of the batches -> one answer; fail = {places, message}: the places of a batch that could not start are shown as groups that say why (what was found before stays) */
+function mrAiMergeResults(parts, fail) {
+  if (parts.length === 1 && !fail) return parts[0];
+  const groups = parts.reduce((a, p) => a.concat(p.groups), []);
+  if (fail) fail.places.forEach(p => groups.push({ port: p.port, country: p.country || '', warning: 'Not searched: ' + fail.message, hidden_small: 0, failed: true, candidates: [] }));
+  const last = parts[parts.length - 1], warn = []; parts.forEach(p => { if (p.warning && warn.indexOf(p.warning) < 0) warn.push(p.warning); });
+  const used = parts.reduce((n, p) => n + (p.calls_used || 0), 0);
+  return { groups: groups, candidates: groups.reduce((a, g) => a.concat(g.candidates), []), warning: warn.join(' '), provider: parts[0].provider, searched_at: last.searched_at, remaining_today: last.remaining_today, calls_used: used || null, remaining_you: last.remaining_you };
+}
+/* onProgress({i, n, from, to, total}) before each batch; the first batch failing throws (nothing was paid for later ones), a later one keeps what was found; a newer search (guard) drops the whole answer */
+async function mrAiRunFindBatched(call, guard, req, onProgress) {
+  const batches = mrAiBatches(req); if (batches.length === 1) return mrAiRunFind(call, guard, req);
+  const my = guard.next(), parts = []; let fail = null;
+  for (let i = 0; i < batches.length; i++) {
+    if (onProgress) onProgress({ i: i, n: batches.length, from: i * MR_AI_BATCH + 1, to: Math.min((i + 1) * MR_AI_BATCH, req.places.length), total: req.places.length });
+    let r; try { r = await call('api_mrAiFind', batches[i]); } catch (e) { if (!guard.ok(my)) return { stale: true }; if (!parts.length) throw e; fail = { places: batches.slice(i).reduce((a, b) => a.concat(b.places), []), message: mrAiStr((e && e.message) || e, 200) }; break; }
+    if (!guard.ok(my)) return { stale: true };
+    parts.push(mrAiCleanResult(r, batches[i]));
+  }
+  return guard.ok(my) ? { res: mrAiMergeResults(parts, fail) } : { stale: true };
+}
 function mrAiCleanRates(r) {
   r = r || {}; const rem = Number(r.remaining_today);
   return { rates: (Array.isArray(r.rates) ? r.rates : []).slice(0, 20).map(x => Object.assign(mrAiRate(x) || {}, {})).filter(x => x.amount), source_urls: (Array.isArray(r.source_urls) ? r.source_urls : []).map(mrSafeUrl).filter(Boolean).slice(0, 10), warning: mrAiStr(r.warning, 300), remaining_today: r.remaining_today == null || r.remaining_today === '' || !isFinite(rem) ? null : Math.max(0, Math.floor(rem)), remaining_you: mrAiNum(r.remaining_you) };
@@ -7897,7 +7926,7 @@ function mrAiRunRates(call, guard, supplierKey) { return mrAiGuarded(guard, () =
 /* "Add to suppliers" / "Add with rates": the candidate (already cleaned) plus the port, country and kind it was found for */
 function mrAiAddPayload(c, f) {
   const p = (f && f.port) || {};
-  return { name: c.name, entity: c.entity, category: c.category || (c.role && !mrRoleKind(c.role) ? mrAiStr(c.role, 80) : ''), url: c.url, email: c.email, phone: c.phone, contact_source: c.contact_source, rates: mrAiServiceRates(c).map(r => Object.assign({}, r)), source_urls: c.source_urls.slice(), confidence: c.confidence, languages: (c.languages || []).slice(), notes: c.notes, port: c.port || mrAiStr(p.port || p.city || '', 100), country: c.country || mrAiStr(p.country, 80), kind: mrRoleKind(c.role) || (f && f.kind) || '' };
+  return { name: c.name, entity: c.entity, category: c.category || (c.role && !mrRoleKind(c.role) ? mrAiStr(c.role, 80) : ''), url: c.url, email: c.email, phone: c.phone, contact_source: c.contact_source, rates: mrAiServiceRates(c).map(r => Object.assign({}, r)), source_urls: c.source_urls.slice(), confidence: c.confidence, languages: (c.languages || []).slice(), vehicles: (c.vehicles || []).map(v => ({ type: v.type, seats: v.seats })), notes: c.notes, port: c.port || mrAiStr(p.port || p.city || '', 100), country: c.country || mrAiStr(p.country, 80), kind: mrRoleKind(c.role) || (f && f.kind) || '' };
 }
 /* only real service rates become quotes: a consumer tour price (per person, on a booking site) is shown but never saved as a rate */
 function mrAiServiceRates(c) { return (c.rates || []).filter(r => !r.consumer_price); }
@@ -7928,12 +7957,15 @@ function mrQuoteOriginHtml(q) {
 const MR_CONSUMER_CHIP = '<span class="chip muted" title="A price a traveller pays for a tour on a booking site, or a price with no service unit (per hour, day, transfer or vehicle). It is not what a supplier charges for a service, so it is never saved as a rate.">Tour price (not a service rate)</span>';
 function mrAiRateLine(r) {
   const link = mrAiLink(r.source_url, 'source');
-  return '<li><b>' + esc(r.currency + ' ' + mrMoney(r.amount)) + '</b>' + (r.unit ? ' <span class="muted">' + esc(r.unit) + '</span>' : '') + (r.service ? ' · ' + esc(r.service) : '') + (r.note ? ' <small class="muted">' + esc(r.note) + '</small>' : '') + (r.consumer_price ? ' ' + MR_CONSUMER_CHIP : '') + ' ' + (link || '<small class="muted">(no source link)</small>') + '</li>';
+  return '<li><b>' + esc(r.currency + ' ' + mrMoney(r.amount)) + '</b>' + (r.unit ? ' <span class="muted">' + esc(r.unit) + '</span>' : '') + (r.service ? ' · ' + esc(r.service) : '') + (r.seats ? ' · ' + esc(r.seats) + ' seats' : '') + (r.note ? ' <small class="muted">' + esc(r.note) + '</small>' : '') + (r.consumer_price ? ' ' + MR_CONSUMER_CHIP : '') + ' ' + (link || '<small class="muted">(no source link)</small>') + '</li>';
 }
+/* the capacity of a provider as a chip: the largest vehicle with a published capacity, or (when a minimum was asked) that it does not publish it */
+function mrAiCapChip(c) { return c.max_seats ? ' <span class="chip info" title="The largest vehicle with a capacity published on its pages">up to ' + c.max_seats + ' seats</span>' : c.capacity_unknown ? ' <span class="chip warn" title="You asked for a minimum capacity and this provider does not publish its vehicles">capacity not published</span>' : ''; }
+const mrAiVehicleText = v => (v.type || 'vehicle') + (v.seats ? ' · ' + v.seats + ' seats' : '');
 /* s = {added: the saved supplier or undefined, adding: bool} */
 function mrAiCardHtml(c, s) {
   s = s || {}; const ent = MR_AI_ENTITY[c.entity] || MR_AI_ENTITY.unknown, conf = MR_AI_CONF[c.confidence] || MR_AI_CONF.low;
-  const head = '<div class="mr-ai-h"><b>' + esc(c.name) + '</b> <span class="chip ' + ent[1] + '">' + ent[0] + '</span>' + (c.role ? ' <span class="chip info mr-role" title="Role">' + esc(mrAiRoleLabel(c.role)) + '</span>' : '') + (c.category ? ' <span class="chip" title="' + esc(c.category) + '">' + esc(mrCatLabel(c.category)) + '</span>' : '') + (c.blocked ? '' : ' <span class="chip ' + conf[1] + '">' + conf[0] + '</span>') + '</div>';
+  const head = '<div class="mr-ai-h"><b>' + esc(c.name) + '</b> <span class="chip ' + ent[1] + '">' + ent[0] + '</span>' + (c.role ? ' <span class="chip info mr-role" title="Role">' + esc(mrAiRoleLabel(c.role)) + '</span>' : '') + (c.category ? ' <span class="chip" title="' + esc(c.category) + '">' + esc(mrCatLabel(c.category)) + '</span>' : '') + (c.blocked ? '' : ' <span class="chip ' + conf[1] + '">' + conf[0] + '</span>' + mrAiCapChip(c)) + '</div>';
   if (c.blocked) return '<div class="mr-ai-card blocked" data-ck="' + esc(c._k) + '" tabindex="-1" aria-disabled="true">' + head + '<p class="mr-ai-why"><span class="chip bad">Do not contact</span> This name or contact is on the do-not-contact list: no contact details or rates are shown and it cannot be added.</p></div>';
   const src = mrAiLink(c.contact_source, 'source') || '<small class="muted">(not verified: no source page)</small>', lines = [];
   if (c.url) lines.push('<div>Web: ' + mrAiLink(c.url, mrHost(c.url) || c.url) + '</div>');
@@ -7941,6 +7973,7 @@ function mrAiCardHtml(c, s) {
   if (c.phone) lines.push('<div>Phone: <span class="mr-ai-v">' + esc(c.phone) + '</span> ' + src + '</div>');
   if (!lines.length) lines.push('<div class="muted">No public contact found.</div>');
   const langs = (c.languages || []).map(mrLangOne).filter((x, i, a) => x && a.indexOf(x) === i); if (langs.length) lines.push('<div>Languages: <span class="mr-ai-v">' + esc(langs.join(', ')) + '</span></div>');
+  const veh = (c.vehicles || []).filter(v => v.type || v.seats); if (veh.length) lines.push('<div>Vehicles: <span class="mr-ai-v">' + esc(veh.map(mrAiVehicleText).join(' · ')) + '</span></div>');
   const sources = c.source_urls.map((u, i) => mrAiLink(u, mrHost(u) || 'source ' + (i + 1))).filter(Boolean);
   const busy = !!s.adding, off = busy ? ' disabled' : '', have = c.exists && !s.added;
   return '<div class="mr-ai-card" data-ck="' + esc(c._k) + '" tabindex="-1">' + head + '<div class="mr-ai-body">' + lines.join('') +
@@ -7955,14 +7988,14 @@ function mrPlaceDisplay(p) { p = p || {}; return p.custom && p.label ? p.label :
 function mrAiGroupHtml(g, a, named) {
   const title = [g.port, g.country].filter(Boolean).join(', ');
   const head = named && title ? '<div class="mr-ai-grp"><h4>' + esc(title) + '</h4><span class="hint">' + g.candidates.length + ' result' + (g.candidates.length === 1 ? '' : 's') + '</span></div>' : '';
-  const warn = g.warning ? '<div class="note" role="status" style="margin:0 0 8px">' + esc(g.warning) + '</div>' : '';
+  const warn = (g.warning ? '<div class="note" role="status" style="margin:0 0 8px">' + esc(g.warning) + '</div>' : '') + (g.hidden_small ? '<div class="hint" style="margin:0 0 8px">' + g.hidden_small + ' provider' + (g.hidden_small === 1 ? '' : 's') + ' whose vehicles are all smaller than the minimum left out.</div>' : '');
   const body = g.candidates.length ? '<div class="mr-ai-list">' + g.candidates.map(c => mrAiCardHtml(c, { added: (a.added || {})[c._k], adding: (a.adding || {})[c._k] })).join('') + '</div>'
     : '<div class="empty">' + (named && title ? 'Nothing found in ' + esc(title) + '. Try other roles or a nearby place.' : 'Nothing found for this search. Try another kind of provider or a nearby port.') + '</div>';
   return '<section class="mr-ai-g">' + head + warn + body + '</section>';
 }
 function mrAiResultsHtml(a) {
   a = a || {}; if (a.err) return '<div class="err" role="alert">' + esc(a.err) + '</div>';
-  if (a.busy) return '<p class="muted" role="status"><span class="spin"></span> Searching public web pages with the AI… this can take up to a minute for each place.</p>';
+  if (a.busy) return '<p class="muted" role="status"><span class="spin"></span> Searching public web pages with the AI… this can take up to a minute for each place.' + (a.prog && a.prog.n > 1 ? ' <b>Places ' + a.prog.from + '–' + a.prog.to + ' of ' + a.prog.total + '</b> (batch ' + (a.prog.i + 1) + ' of ' + a.prog.n + '): the results appear when all of them are done.' : '') + '</p>';
   const r = a.res; if (!r) return '';
   const groups = Array.isArray(r.groups) && r.groups.length ? r.groups : [{ port: '', country: '', warning: '', candidates: r.candidates || [] }], total = groups.reduce((n, g) => n + g.candidates.length, 0);
   const rf = a.resFor || {}, roles = (rf.roles || (rf.kind ? [rf.kind] : [])).map(mrAiRoleLabel).filter(Boolean), places = (rf.places || (rf.port ? [rf.port] : [])).map(mrPlaceDisplay).filter(Boolean);
@@ -8098,8 +8131,8 @@ function mrNoDataHtml(name, country) {
     '<button class="btn primary" id="mrFindSup">Find suppliers with AI for ' + esc(name) + '</button><h4 class="mr-near-h" id="mrNearH">' + esc(mrNearbyTitle(country, [])) + '</h4><div class="mr-pop" id="mrNear" style="margin-top:6px"><span class="muted"><span class="spin"></span> Looking for ports with data…</span></div></div>';
 }
 /* ---------- the AI finder: several places, several roles ---------- */
-const MR_AI_PLACE_MAX = 5, MR_AI_ROLE_MAX = 8, MR_AI_GROUP_MAX = 40, MR_AI_TOTAL_MAX = 200, MR_ROLES_KEY = 'gc_mr_roles';
-const MR_AI_ROLE_SHORT = { guide: 'Guides', staff: 'Excursion staff', driver: 'Drivers', transfer: 'Transfers', car_rental: 'Car rental', vehicle_charter: 'Vehicle charter', agency: 'Tour agencies' };
+const MR_AI_PLACE_MAX = 15, MR_AI_BATCH = 5, MR_AI_ROLE_MAX = 8, MR_AI_GROUP_MAX = 40, MR_AI_TOTAL_MAX = 200, MR_ROLES_KEY = 'gc_mr_roles';
+const MR_AI_ROLE_SHORT = { guide: 'Guides', staff: 'Excursion staff', driver: 'Drivers', transfer: 'Transfers', car_rental: 'Car rental', vehicle_charter: 'Vehicle charter', coach: 'Buses / coaches', agency: 'Tour agencies' };
 /* a free role is a label for the AI: letters, digits, spaces and & - ' only (the server refuses anything else) */
 function mrRoleOk(t) { return /^[A-Za-zÀ-ɏ0-9 &'’\-]+$/.test(String(t)); }
 /* roles typed by hand: text of 2..40 characters, no repeats */
@@ -8126,10 +8159,17 @@ function mrAiCost(n, left) {
   if (!n) return { n: 0, left: m, block: false, line: 'Add at least one place', text: 'One AI search is used for each place, with all the roles in the same request.', msg: '' };
   const line = n + ' search' + s + ' needed' + (known ? ' · ' + m + ' left today' : '');
   if (known && n > m) return { n: n, left: m, block: true, line: line, text: '', msg: 'Not enough AI searches left today: this needs ' + n + ' but only ' + m + (m === 1 ? ' is' : ' are') + ' left. Remove places or try again tomorrow.' };
-  return { n: n, left: m, block: false, line: line, text: known ? 'This will use ' + n + ' of your ' + m + ' AI searches left today (one per place, all the roles together).' : 'This will use ' + n + ' AI search' + s + ' (one per place, all the roles together).', msg: '' };
+  return { n: n, left: m, block: false, line: line, text: known ? 'This will use ' + n + ' of your ' + m + ' AI searches left today (one per place, all the roles together).' + (n > MR_AI_BATCH ? ' The places go ' + MR_AI_BATCH + ' at a time, one batch after the other.' : '') : 'This will use ' + n + ' AI search' + s + ' (one per place, all the roles together).' + (n > MR_AI_BATCH ? ' The places go ' + MR_AI_BATCH + ' at a time, one batch after the other.' : ''), msg: '' };
 }
 function mrAiCostHtml(c) { return '<div class="mr-cost' + (c.block ? ' bad' : '') + '" role="status"><b>' + esc(c.line) + '</b>' + (c.block ? '<div class="err" style="margin-top:6px">' + esc(c.msg) + '</div>' : c.text ? '<div class="hint">' + esc(c.text) + '</div>' : '') + '</div>'; }
-/* the request of the finder: places (1..5, each 2..100 characters), roles (1..10), languages. The older single form {port, kind} still works. */
+/* the minimum capacity typed (optional): {n} (0 = none) or {error} */
+function mrAiMinSeatsClean(v) { const t = String(v == null ? '' : v).trim(); if (!t) return { n: 0 }; const n = /^\d{1,3}$/.test(t) ? Number(t) : NaN; return n >= 5 && n <= 100 ? { n: n } : { error: 'Minimum seats must be a whole number from 5 to 100.' }; }
+/* the places of a pasted list ("Bilbao ★\nLe Havre ★\nVigo; Lisboa"): one per line or per ";" / "|", the star and bullet marks removed, no repeats (a comma stays: "Bilbao, Spain" is one place) */
+function mrSplitPlaces(text) {
+  const out = []; String(text == null ? '' : text).split(/[\r\n;|]+/).forEach(x => { const t = mrAiStr(x.replace(/[★☆•·▪●•*]+/g, ' ').replace(/^\s*(?:\d+[.)]|[-–—])\s*/, ''), 100); if (t.length >= 2 && !out.some(y => mrNorm(y) === mrNorm(t))) out.push(t); });
+  return out;
+}
+/* the request of the finder: places (1..15, each 2..100 characters; the page sends them 5 at a time), roles (1..8), languages, the minimum seats (optional). The older single form {port, kind} still works. */
 function mrAiRequest(f) {
   f = f || {};
   const raw = Array.isArray(f.places) ? f.places : f.port ? [f.port] : [], seen = {}, places = [];
@@ -8145,7 +8185,8 @@ function mrAiRequest(f) {
   if (!roles.length) return { error: 'Choose at least one role to look for.' };
   if (roles.length > MR_AI_ROLE_MAX) return { error: 'Up to ' + MR_AI_ROLE_MAX + ' roles per search.' };
   const langs = mrAiLangs(f.lang);   // one language (or none) is sent as text, several as a list (at most 5)
-  return { req: { places: places, roles: roles, lang: langs.length > 1 ? langs : (langs[0] || '') } };
+  const ms = mrAiMinSeatsClean(f.minSeats); if (ms.error) return { error: ms.error };
+  return { req: Object.assign({ places: places, roles: roles, lang: langs.length > 1 ? langs : (langs[0] || '') }, ms.n ? { min_seats: ms.n } : {}) };
 }
 /* ---------- Excel: the sheets of the Market Research workbooks (sheets for xlsxBuild) ---------- */
 const MR_XLSX_SAMPLE_CAP = 5000, MR_XLSX_SUP_CAP = 5000, MR_XLSX_PAGE = 300;
@@ -8224,21 +8265,22 @@ function mrAiResultSheets(res, rf) {
   const rows = [], rates = [], searches = [];
   groups.forEach(g => {
     const place = [g.port, g.country].filter(Boolean).join(', ');
-    searches.push({ place: place, found: g.candidates.length, provider: provider, when: when, roles: roles, langs: langs, note: g.warning || '' });
+    searches.push({ place: place, found: g.candidates.length, provider: provider, when: when, roles: roles, langs: langs, minSeats: rf.minSeats || '', small: g.hidden_small || '', note: g.warning || '' });
     g.candidates.forEach(c => {
       const nc = !!c.blocked, port = c.port || g.port, country = c.country || g.country, rs = nc ? [] : (c.rates || []), conf = (MR_AI_CONF[c.confidence] || MR_AI_CONF.low)[0];
       rows.push({ port: port, country: country, role: c.role ? mrAiRoleLabel(c.role) : '', name: c.name, entity: c.entity === 'company' ? 'Company' : c.entity === 'individual' ? 'Individual' : '', category: c.category ? mrCatLabel(c.category) : '', confidence: nc ? '' : conf,
         email: nc ? '' : c.email, phone: nc ? '' : c.phone, web: nc ? '' : c.url, languages: nc ? '' : (c.languages || []).map(mrLangOne).filter(Boolean).join(', '),
+        vehicles: nc ? '' : (c.vehicles || []).map(mrAiVehicleText).join('; '), maxSeats: nc ? '' : c.max_seats || '', capacity: nc ? '' : c.capacity_unknown ? 'Not published' : '',
         rates: rs.map(r => r.currency + ' ' + r.amount + (r.unit ? ' ' + r.unit : '') + (r.service ? ' (' + r.service + ')' : '')).join(' · '), svc: rs.filter(r => !r.consumer_price).length,
         contact: nc ? '' : c.contact_source, sources: nc ? '' : (c.source_urls || []).join('\n'), notes: nc ? '' : c.notes, exists: yes(c.exists), blocked: yes(nc) });
-      rs.forEach(r => rates.push({ port: port, country: country, name: c.name, currency: r.currency, amount: r.amount, unit: r.unit, service: r.service, kind: r.consumer_price ? 'Tour / ticket price (not a service rate)' : 'Service rate', note: r.note, source: r.source_url }));
+      rs.forEach(r => rates.push({ port: port, country: country, name: c.name, currency: r.currency, amount: r.amount, unit: r.unit, seats: r.seats || '', service: r.service, kind: r.consumer_price ? 'Tour / ticket price (not a service rate)' : 'Service rate', note: r.note, source: r.source_url }));
     });
   });
   const sheets = [{ name: 'AI results', columns: [{ key: 'port', header: 'Place', width: 22 }, { key: 'country', header: 'Country' }, { key: 'role', header: 'Role', width: 18 }, { key: 'name', header: 'Name', width: 30 }, { key: 'entity', header: 'Company / individual' }, { key: 'category', header: 'Category', width: 20 }, { key: 'confidence', header: 'Confidence', width: 16 },
-    { key: 'email', header: 'Email', width: 28 }, { key: 'phone', header: 'Phone', width: 18 }, { key: 'web', header: 'Website', type: 'url', width: 32 }, { key: 'languages', header: 'Languages', width: 20 }, { key: 'rates', header: 'Published rates', width: 40, wrap: true }, { key: 'svc', header: 'Service rates', type: 'number', fmt: 'int' },
+    { key: 'email', header: 'Email', width: 28 }, { key: 'phone', header: 'Phone', width: 18 }, { key: 'web', header: 'Website', type: 'url', width: 32 }, { key: 'languages', header: 'Languages', width: 20 }, { key: 'vehicles', header: 'Vehicles (type · seats)', width: 36, wrap: true }, { key: 'maxSeats', header: 'Largest capacity (seats)', type: 'number', fmt: 'int' }, { key: 'capacity', header: 'Capacity' }, { key: 'rates', header: 'Published rates', width: 40, wrap: true }, { key: 'svc', header: 'Service rates', type: 'number', fmt: 'int' },
     { key: 'contact', header: 'Where the contact was found', type: 'url', width: 32 }, { key: 'sources', header: 'Sources', width: 40, wrap: true }, { key: 'notes', header: 'Notes', width: 40, wrap: true }, { key: 'exists', header: 'Already in suppliers' }, { key: 'blocked', header: 'Do not contact' }], rows: rows }];
-  if (rates.length) sheets.push({ name: 'Published rates', columns: [{ key: 'port', header: 'Place', width: 22 }, { key: 'country', header: 'Country' }, { key: 'name', header: 'Supplier', width: 30 }, { key: 'kind', header: 'Kind', width: 30 }, { key: 'currency', header: 'Currency' }, { key: 'amount', header: 'Amount', type: 'number', fmt: 'dec2' }, { key: 'unit', header: 'Unit', width: 20 }, { key: 'service', header: 'Service', width: 26 }, { key: 'note', header: 'Note', width: 40, wrap: true }, { key: 'source', header: 'Source link', type: 'url', width: 32 }], rows: rates });
-  sheets.push({ name: 'Search', columns: [{ key: 'place', header: 'Place', width: 26 }, { key: 'found', header: 'Results', type: 'number', fmt: 'int' }, { key: 'provider', header: 'Searched with' }, { key: 'when', header: 'Searched on' }, { key: 'roles', header: 'Roles asked', width: 40, wrap: true }, { key: 'langs', header: 'Languages asked', width: 24 }, { key: 'note', header: 'Note', width: 40, wrap: true }], rows: searches });
+  if (rates.length) sheets.push({ name: 'Published rates', columns: [{ key: 'port', header: 'Place', width: 22 }, { key: 'country', header: 'Country' }, { key: 'name', header: 'Supplier', width: 30 }, { key: 'kind', header: 'Kind', width: 30 }, { key: 'currency', header: 'Currency' }, { key: 'amount', header: 'Amount', type: 'number', fmt: 'dec2' }, { key: 'unit', header: 'Unit', width: 20 }, { key: 'seats', header: 'Seats', type: 'number', fmt: 'int' }, { key: 'service', header: 'Service', width: 26 }, { key: 'note', header: 'Note', width: 40, wrap: true }, { key: 'source', header: 'Source link', type: 'url', width: 32 }], rows: rates });
+  sheets.push({ name: 'Search', columns: [{ key: 'place', header: 'Place', width: 26 }, { key: 'found', header: 'Results', type: 'number', fmt: 'int' }, { key: 'provider', header: 'Searched with' }, { key: 'when', header: 'Searched on' }, { key: 'roles', header: 'Roles asked', width: 40, wrap: true }, { key: 'langs', header: 'Languages asked', width: 24 }, { key: 'minSeats', header: 'Minimum seats asked', type: 'number', fmt: 'int' }, { key: 'small', header: 'Left out (smaller vehicles)', type: 'number', fmt: 'int' }, { key: 'note', header: 'Note', width: 40, wrap: true }], rows: searches });
   return sheets;
 }
 function mrStat2(k) { const s = MR_STATUSES.find(x => x[0] === k); return s ? s[1] : 'New'; }
@@ -8271,6 +8313,7 @@ function mrAiFormHtml(a, comboHtml) {
     '<p class="hint" style="margin:0 0 4px">The AI searches public web pages for providers in any city, port or region and shows whether each one is a company or an individual, its public contact and any published rate. Only the places, roles and languages are sent. It uses one AI search for each place (all the roles of a place go together). Nothing is saved or contacted until you press Add.</p>' +
     '<fieldset id="mrAiFs" style="border:0;margin:0;padding:0;min-width:0"><div class="mr-g2"><div class="full"><label for="mrAip">Places <span class="hint">(up to ' + MR_AI_PLACE_MAX + ': a port, a city, a region, anywhere in the world)</span></label><div id="mrAiPw">' + mrAiPlacesHtml(a.places) + '</div><div style="margin-top:6px">' + comboHtml + '</div></div>' +
     '<div class="full"><label id="mrAiRl">Roles <span class="hint">(pick one or several, or add your own)</span></label><div id="mrAiRw">' + mrAiRolesInner(a.roles, a.customRoles) + '</div></div>' +
+    '<div class="full"><label for="mrAiSeats">Minimum seats <span class="hint">(optional: for buses, vans or cars, for example 35 for a coach)</span></label><input id="mrAiSeats" type="number" inputmode="numeric" min="5" max="100" step="1" placeholder="e.g. 35" value="' + esc(a.minSeats || '') + '" style="max-width:160px"></div>' +
     '<div class="full"><label id="mrAiLl">Languages <span class="hint">(optional, up to ' + MR_AI_LANG_MAX + ')</span></label>' + mrAiLangsHtml(a.lang) + '</div></div></fieldset>' +
     '<div class="err hidden" id="mrAiE" role="alert"></div><div id="mrAiCostBox" style="margin-top:12px">' + mrAiCostHtml(cost) + '</div><div class="toolbar" style="margin:10px 0 0"><button class="btn primary" id="mrAiGo"' + (cost.block ? ' disabled' : '') + '>Find</button><span class="hint" id="mrAiRem"></span></div><div id="mrAiRes" style="margin-top:12px"></div></div>';
 }
@@ -8328,7 +8371,7 @@ async function mrMyPassword() {
 }
 function mrState() { return ADM.mr || (ADM.mr = { tab: 'benchmark', run: 0, ports: null, portsInfo: null, port: null, bench: null, benchSeq: 0, services: null, cmpKey: '', cmpCache: {}, sup: { port: null, category: '', status: '', source: '', q: '', offset: 0, limit: 100 }, qp: null, ro: null, timer: 0 }); }
 /* the AI finder state lives with the page state (ADM.mr), so results survive a tab change; a call still running when the page is redrawn is cancelled (guard) */
-function mrAiState(st) { return st.ai || (st.ai = { open: false, places: [], roles: ['guide'], customRoles: [], lang: [], busy: false, err: '', res: null, resFor: null, remaining: null, added: {}, adding: {}, guard: mrAiLatest() }); }
+function mrAiState(st) { return st.ai || (st.ai = { open: false, places: [], roles: ['guide'], customRoles: [], lang: [], minSeats: '', prog: null, busy: false, err: '', res: null, resFor: null, remaining: null, added: {}, adding: {}, guard: mrAiLatest() }); }
 const MR_STOP = { mrStop: true };
 /* every call: the session token first; a lost session ends the page work quietly (callers ignore MR_STOP) */
 async function mrApi(name, ...args) {
@@ -8697,6 +8740,12 @@ async function mrTabSuppliers(ctx) {
     };
     rw.onkeydown = e => { if (e.key === 'Enter' && e.target.id === 'mrAiRx') { e.preventDefault(); addRole(); } };
     const langSet = (v, focus) => { A.lang = mrAiLangs(v); const w = $('#mrAiLw', aiBox); if (w) w.innerHTML = mrAiLangsInner(A.lang); aiChanged(); const fo = focus && $(focus, aiBox); if (fo && fo.focus) fo.focus(); };   // a change of languages drops a search still running (like a change of places or roles)
+    const sInp = $('#mrAiSeats', aiBox); if (sInp) sInp.oninput = e => { A.minSeats = e.target.value; aiChanged(); };   // a change of the minimum drops an older answer, like a change of places or roles
+    aiBox.onpaste = e => {   // a pasted LIST of places (one per line, or separated by ";") becomes several places at once
+      if (!e.target || e.target.id !== 'mrAip' || A.busy) return; const cd = e.clipboardData || window.clipboardData, parts = mrSplitPlaces(cd ? cd.getData('text') : ''); if (parts.length < 2) return;
+      e.preventDefault(); let n = 0; parts.forEach(t => { if (A.places.length >= MR_AI_PLACE_MAX) return; const pp = mrPlaceFromText(st.ports, t, srcAddCustom); if (pp && !A.places.some(x => mrPlaceKeyIn(x, st.ports) === mrPlaceKeyIn(pp, st.ports))) { A.places.push(pp); n++; } });
+      aiPlacesDraw(); toast(n + ' place' + (n === 1 ? '' : 's') + ' added' + (parts.length > n ? ' (' + (parts.length - n) + ' skipped: repeated or over the limit of ' + MR_AI_PLACE_MAX + ')' : '') + '.', 5000);
+    };
     const lw = $('#mrAiLw', aiBox);
     lw.onclick = e => { const b = e.target.closest('[data-lg]'); if (!b) return; const l = b.dataset.lg, has = A.lang.some(y => mrNorm(y) === mrNorm(l)); langSet(has ? A.lang.filter(y => mrNorm(y) !== mrNorm(l)) : A.lang.concat([l]), '[data-lg="' + l + '"]'); };
     lw.onkeydown = e => { if (e.key !== 'Enter' || e.target.id !== 'mrAiLx') return; e.preventDefault(); const v = e.target.value.trim(); if (v) langSet(A.lang.concat([v]), '#mrAiLx'); };
@@ -8706,14 +8755,14 @@ async function mrTabSuppliers(ctx) {
   async function aiFind() {
     if (A.busy) return;
     const pend = $('#mrAip', aiBox); if (pend && pend.value.trim()) { const pp = mrPlaceFromText(st.ports, pend.value, srcAddCustom); pend.value = ''; if (pp) aiAddPlace(pp); }   // a place typed and not picked yet is added (the box keeps its text when the focus leaves it)
-    const chk = mrAiRequest({ places: A.places, roles: A.roles, lang: A.lang, catalog: st.ports }), e = $('#mrAiE', aiBox);
+    const chk = mrAiRequest({ places: A.places, roles: A.roles, lang: A.lang, minSeats: A.minSeats, catalog: st.ports }), e = $('#mrAiE', aiBox);
     if (chk.error) { e.textContent = chk.error; e.classList.remove('hidden'); return; }
     const cost = mrAiCost(chk.req.places.length, aiLeft()); if (cost.block) { e.textContent = cost.msg; e.classList.remove('hidden'); return; } e.classList.add('hidden');
-    A.busy = true; A.err = ''; A.res = null; aiDrawRes(); const sent = { places: A.places.slice(), roles: A.roles.slice() };
+    A.busy = true; A.err = ''; A.res = null; A.prog = null; aiDrawRes(); const sent = { places: A.places.slice(), roles: A.roles.slice(), minSeats: chk.req.min_seats || 0 };
     try {
-      const out = await mrAiRunFind(mrApi, A.guard, chk.req); if (out.stale) return;   // a newer search (or other places / roles) replaced this one
-      A.busy = false; A.res = out.res; A.resFor = sent; A.added = {}; A.adding = {}; mrAiNoteLeft(A, out.res);
-    } catch (x) { A.busy = false; A.err = mrMsg(x); }
+      const out = await mrAiRunFindBatched(mrApi, A.guard, chk.req, p => { A.prog = p; aiDrawRes(); }); if (out.stale) return;   // a newer search (or other places / roles) replaced this one; more than 5 places go in batches of 5
+      A.busy = false; A.prog = null; A.res = out.res; A.resFor = sent; A.added = {}; A.adding = {}; mrAiNoteLeft(A, out.res);
+    } catch (x) { A.busy = false; A.prog = null; A.err = mrMsg(x); }
     A.draw();
   }
   async function aiAdd(k, withRates) {
