@@ -7957,7 +7957,10 @@ function mrAiResultsHtml(a) {
   const rf = a.resFor || {}, roles = (rf.roles || (rf.kind ? [rf.kind] : [])).map(mrAiRoleLabel).filter(Boolean), places = (rf.places || (rf.port ? [rf.port] : [])).map(mrPlaceDisplay).filter(Boolean);
   const what = [roles.join(', '), places.length ? 'in ' + places.join(', ') : ''].filter(Boolean).join(' ');
   const meta = [total + ' result' + (total === 1 ? '' : 's') + (what ? ' for ' + what : ''), r.provider ? 'searched with ' + r.provider : '', r.searched_at ? new Date(r.searched_at).toISOString().slice(0, 10) : '', r.calls_used != null ? r.calls_used + ' AI search' + (r.calls_used === 1 ? '' : 'es') + ' used' : '', mrAiRemainingText(r.remaining_you != null ? r.remaining_you : r.remaining_today != null ? r.remaining_today : a.remaining)].filter(Boolean).join(' · ');
-  return '<div class="note mr-ai-banner" role="note">' + esc(MR_AI_BANNER) + '</div><p class="hint" role="status" style="margin:8px 0">' + esc(meta) + '</p>' +
+  const hasLeft = mrAiRemainingText(r.remaining_you != null ? r.remaining_you : r.remaining_today != null ? r.remaining_today : a.remaining) !== '';
+  return '<div class="note mr-ai-banner" role="note">' + esc(MR_AI_BANNER) + '</div><p class="hint" role="status" style="margin:8px 0">' + esc(meta) +
+    (hasLeft ? ' <span class="muted" title="Each place of a search uses one AI search. The daily limit is shared by the whole team and starts again every day.">ⓘ one search per place; the limit is shared by the team and renews daily</span>' : '') + '</p>' +
+    (total ? '<div class="toolbar" style="margin:0 0 10px"><button class="btn sm" id="mrAiXlsx" title="Excel file with every result below: providers, contacts, published rates and what was searched. Nothing is added to your suppliers.">⬇ Export these ' + total + ' result' + (total === 1 ? '' : 's') + ' to Excel</button><span class="hint">These results are not saved until you add them.</span></div>' : '') +
     (r.warning ? '<div class="note" role="status" style="margin:0 0 8px">' + esc(r.warning) + '</div>' : '') + groups.map(g => mrAiGroupHtml(g, a, groups.length > 1 || (places.length > 1) || !!g.port)).join('');
 }
 /* the language chips: the common ones toggle, anything else is typed (Enter adds it); a.lang is the list now chosen */
@@ -8187,6 +8190,33 @@ function mrSupplierSheet(rows) {
     { key: 'blocked', header: 'Do not contact' }, { key: 'origin', header: 'How it was added' }, { key: 'notes', header: 'Notes', width: 50, wrap: true }, { key: 'created', header: 'Created', type: 'date' }, { key: 'updated', header: 'Updated', type: 'date' }, { key: 'key', header: 'Id' }],
   rows: (rows || []).map(r => { const nc = !!r.blocked; return ({ name: r.name, entity: r.entity === 'company' ? 'Company' : r.entity === 'individual' ? 'Individual' : '', category: r.category ? mrCatLabel(r.category) : '', categoryRaw: r.category, status: mrStat2(r.status), owner: r.owner, port: r.port, country: r.country, ota: r.ota, person: nc ? '' : r.person, role: nc ? '' : r.role, phone: nc ? '' : r.phone, email: nc ? '' : r.email, web: nc ? '' : r.web, url: nc ? '' : r.url, access: r.access,   // do-not-contact: name, place, category and the flag stay; nothing that could reach them (the notes of an AI find carry the contact page)
     quotes: Number(r.quotes) || 0, blocked: r.blocked ? 'Yes' : '', origin: MR_SRC_TEXT[r.source] || r.source, notes: nc ? '' : r.notes, created: mrIso(r.created_ms), updated: mrIso(r.updated_ms), key: r.key }); }) };
+}
+/* the results of a "Find with AI" search (nothing is saved yet) as Excel sheets: one row per provider found, one row per published rate, and what was searched.
+   A do-not-contact entry keeps only its name, place, role and the flag: no contact, rate or source leaves the page. */
+function mrAiResultSheets(res, rf) {
+  res = res || {}; rf = rf || {};
+  const groups = Array.isArray(res.groups) && res.groups.length ? res.groups : [{ port: '', country: '', warning: '', candidates: res.candidates || [] }];
+  const yes = v => v ? 'Yes' : '', provider = res.provider || '', when = res.searched_at ? new Date(res.searched_at).toISOString().slice(0, 10) : '';
+  const roles = (rf.roles || (rf.kind ? [rf.kind] : [])).map(mrAiRoleLabel).filter(Boolean).join(', '), langs = (rf.langs || rf.lang || []).map(mrLangOne).filter(Boolean).join(', ');
+  const rows = [], rates = [], searches = [];
+  groups.forEach(g => {
+    const place = [g.port, g.country].filter(Boolean).join(', ');
+    searches.push({ place: place, found: g.candidates.length, provider: provider, when: when, roles: roles, langs: langs, note: g.warning || '' });
+    g.candidates.forEach(c => {
+      const nc = !!c.blocked, port = c.port || g.port, country = c.country || g.country, rs = nc ? [] : (c.rates || []), conf = (MR_AI_CONF[c.confidence] || MR_AI_CONF.low)[0];
+      rows.push({ port: port, country: country, role: c.role ? mrAiRoleLabel(c.role) : '', name: c.name, entity: c.entity === 'company' ? 'Company' : c.entity === 'individual' ? 'Individual' : '', category: c.category ? mrCatLabel(c.category) : '', confidence: nc ? '' : conf,
+        email: nc ? '' : c.email, phone: nc ? '' : c.phone, web: nc ? '' : c.url, languages: nc ? '' : (c.languages || []).map(mrLangOne).filter(Boolean).join(', '),
+        rates: rs.map(r => r.currency + ' ' + r.amount + (r.unit ? ' ' + r.unit : '') + (r.service ? ' (' + r.service + ')' : '')).join(' · '), svc: rs.filter(r => !r.consumer_price).length,
+        contact: nc ? '' : c.contact_source, sources: nc ? '' : (c.source_urls || []).join('\n'), notes: nc ? '' : c.notes, exists: yes(c.exists), blocked: yes(nc) });
+      rs.forEach(r => rates.push({ port: port, country: country, name: c.name, currency: r.currency, amount: r.amount, unit: r.unit, service: r.service, kind: r.consumer_price ? 'Tour / ticket price (not a service rate)' : 'Service rate', note: r.note, source: r.source_url }));
+    });
+  });
+  const sheets = [{ name: 'AI results', columns: [{ key: 'port', header: 'Place', width: 22 }, { key: 'country', header: 'Country' }, { key: 'role', header: 'Role', width: 18 }, { key: 'name', header: 'Name', width: 30 }, { key: 'entity', header: 'Company / individual' }, { key: 'category', header: 'Category', width: 20 }, { key: 'confidence', header: 'Confidence', width: 16 },
+    { key: 'email', header: 'Email', width: 28 }, { key: 'phone', header: 'Phone', width: 18 }, { key: 'web', header: 'Website', type: 'url', width: 32 }, { key: 'languages', header: 'Languages', width: 20 }, { key: 'rates', header: 'Published rates', width: 40, wrap: true }, { key: 'svc', header: 'Service rates', type: 'number', fmt: 'int' },
+    { key: 'contact', header: 'Where the contact was found', type: 'url', width: 32 }, { key: 'sources', header: 'Sources', width: 40, wrap: true }, { key: 'notes', header: 'Notes', width: 40, wrap: true }, { key: 'exists', header: 'Already in suppliers' }, { key: 'blocked', header: 'Do not contact' }], rows: rows }];
+  if (rates.length) sheets.push({ name: 'Published rates', columns: [{ key: 'port', header: 'Place', width: 22 }, { key: 'country', header: 'Country' }, { key: 'name', header: 'Supplier', width: 30 }, { key: 'kind', header: 'Kind', width: 30 }, { key: 'currency', header: 'Currency' }, { key: 'amount', header: 'Amount', type: 'number', fmt: 'dec2' }, { key: 'unit', header: 'Unit', width: 20 }, { key: 'service', header: 'Service', width: 26 }, { key: 'note', header: 'Note', width: 40, wrap: true }, { key: 'source', header: 'Source link', type: 'url', width: 32 }], rows: rates });
+  sheets.push({ name: 'Search', columns: [{ key: 'place', header: 'Place', width: 26 }, { key: 'found', header: 'Results', type: 'number', fmt: 'int' }, { key: 'provider', header: 'Searched with' }, { key: 'when', header: 'Searched on' }, { key: 'roles', header: 'Roles asked', width: 40, wrap: true }, { key: 'langs', header: 'Languages asked', width: 24 }, { key: 'note', header: 'Note', width: 40, wrap: true }], rows: searches });
+  return sheets;
 }
 function mrStat2(k) { const s = MR_STATUSES.find(x => x[0] === k); return s ? s[1] : 'New'; }
 function mrQuoteSheet(rows) {
@@ -8676,6 +8706,7 @@ async function mrTabSuppliers(ctx) {
     if ((el = e.target.closest('[data-ai-add]'))) aiAdd(el.dataset.aiAdd, false);
     else if ((el = e.target.closest('[data-ai-addr]'))) aiAdd(el.dataset.aiAddr, true);
     else if ((el = e.target.closest('[data-ai-open]'))) { const c = aiKey(el.dataset.aiOpen), sup = c && A.added[c._k]; if (sup && sup.key) mrSupplierModal(ctx, sup, load); }
+    else if (e.target.closest('#mrAiXlsx')) mrAiExport(A);
   };
   mrComboBind(box, 'mrSp', Object.assign(mrComboFree(st), { onPick: p => { f.port = p; reload(); if (A.open && A.places.length <= 1 && !A.busy) { A.places = [p]; A.guard.cancel(); aiShow(); } }, onClear: () => { if (f.port) { f.port = null; reload(); } }, current: () => f.port }));
   $('#mrSc', box).onchange = e => { f.category = e.target.value.trim(); reload(); };
@@ -8693,6 +8724,15 @@ async function mrTabSuppliers(ctx) {
   drawStatus(); aiShow(); load();
 }
 
+/* the results of the last "Find with AI" search (all of them, saved or not) in an Excel file: the button of the list above exports only the SAVED suppliers of its filter */
+function mrAiExport(A) {
+  const r = A && A.res; if (!r || !r.candidates || !r.candidates.length) return toast('There are no AI results to export.');
+  try {
+    const places = ((A.resFor && A.resFor.places) || []).map(mrPlaceDisplay).filter(Boolean), tag = places.length ? places[0] + (places.length > 1 ? ' and ' + (places.length - 1) + ' more' : '') : 'search';
+    const out = xlsxDownload(xlsxFileName('ai suppliers ' + tag), mrAiResultSheets(r, Object.assign({}, A.resFor, { langs: A.lang || [] })));
+    toast(mrXlsxMsg(out.sheets), 7000);
+  } catch (x) { mrFail(x); }
+}
 /* every supplier of the filter in an Excel file (all pages, up to a cap) */
 async function mrExportSuppliers(f) {
   const bo = busyOverlay('Preparing the Excel file…');
