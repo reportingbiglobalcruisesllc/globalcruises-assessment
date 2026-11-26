@@ -557,16 +557,42 @@ const sqlRunner = new Runner('sql'), pyRunner = new Runner('py');
    Supports the functions an analyst uses daily, in English or Spanish, with "," or ";" as separator.
    Errors are VALUES (#N/A, #DIV/0!...) like in Excel, so IFERROR works. */
 /*EXCEL-START*/
+/* Excel-style formula engine of the "Excel" questions. It runs in the candidate's browser (no libraries, nothing leaves the page).
+   XL.evaluate(formula, grid) -> { value } | { error }.   grid = rows of cells (row 0 = the header row), a cell is a number, a text or ''.
+   Source of truth: tools/xl-engine.part.js. The page gets it through `node tools/build-xl.js` (block between the EXCEL markers); do not edit it there.
+   What it does like Excel: operator precedence (-2^2 = 4, 5% , &), comparisons, ARRAY arithmetic with broadcasting ((B2:B21="x")*F2:F21), lazy IF / IFS / IFERROR / SWITCH / CHOOSE / LET,
+   wildcards and operators in criteria ("<>", ">=4", "Cat*"), errors (#N/A, #DIV/0!, #VALUE!, #REF!, #NAME?, #NUM!), English AND Spanish function names, "," or ";" between arguments,
+   absolute references ($A$1), whole columns (A:A), array constants ({1,2;3,4}), Sheet!A1 (one sheet only), dynamic arrays inside a formula (FILTER, UNIQUE, SORT, SEQUENCE...).
+   What it does not do: dates, OFFSET / INDIRECT, named ranges, tables, LAMBDA. A formula must return ONE value: a result with several cells is refused. */
 const XL = (() => {
-  const ALIAS = { 'SUMA': 'SUM', 'PROMEDIO': 'AVERAGE', 'CONTAR': 'COUNT', 'CONTARA': 'COUNTA', 'CONTAR.SI': 'COUNTIF', 'CONTAR.SI.CONJUNTO': 'COUNTIFS',
-    'SUMAR.SI': 'SUMIF', 'SUMAR.SI.CONJUNTO': 'SUMIFS', 'PROMEDIO.SI': 'AVERAGEIF', 'PROMEDIO.SI.CONJUNTO': 'AVERAGEIFS', 'REDONDEAR': 'ROUND',
-    'SI': 'IF', 'SI.ERROR': 'IFERROR', 'BUSCARV': 'VLOOKUP', 'BUSCARX': 'XLOOKUP', 'INDICE': 'INDEX', 'ÍNDICE': 'INDEX', 'COINCIDIR': 'MATCH',
-    'Y': 'AND', 'O': 'OR', 'VERDADERO': 'TRUE', 'FALSO': 'FALSE' };
+  'use strict';
+  const ALIAS = {
+    'SUMA': 'SUM', 'PROMEDIO': 'AVERAGE', 'CONTAR': 'COUNT', 'CONTARA': 'COUNTA', 'CONTAR.BLANCO': 'COUNTBLANK', 'CONTAR.SI': 'COUNTIF', 'CONTAR.SI.CONJUNTO': 'COUNTIFS',
+    'SUMAR.SI': 'SUMIF', 'SUMAR.SI.CONJUNTO': 'SUMIFS', 'PROMEDIO.SI': 'AVERAGEIF', 'PROMEDIO.SI.CONJUNTO': 'AVERAGEIFS', 'SUMAPRODUCTO': 'SUMPRODUCT', 'PRODUCTO': 'PRODUCT',
+    'MAX.SI.CONJUNTO': 'MAXIFS', 'MIN.SI.CONJUNTO': 'MINIFS', 'K.ESIMO.MAYOR': 'LARGE', 'K.ESIMO.MENOR': 'SMALL', 'MEDIANA': 'MEDIAN', 'MODA': 'MODE', 'MODA.UNO': 'MODE.SNGL',
+    'DESVEST': 'STDEV', 'DESVEST.M': 'STDEV.S', 'DESVEST.P': 'STDEV.P', 'DESVESTP': 'STDEVP', 'PERCENTIL': 'PERCENTILE', 'PERCENTIL.INC': 'PERCENTILE.INC', 'CUARTIL': 'QUARTILE', 'CUARTIL.INC': 'QUARTILE.INC',
+    'JERARQUIA': 'RANK', 'JERARQUIA.EQV': 'RANK.EQ', 'REDONDEAR': 'ROUND', 'REDONDEAR.MAS': 'ROUNDUP', 'REDONDEAR.MENOS': 'ROUNDDOWN', 'ENTERO': 'INT', 'TRUNCAR': 'TRUNC', 'RESIDUO': 'MOD',
+    'POTENCIA': 'POWER', 'RAIZ': 'SQRT', 'SIGNO': 'SIGN', 'MULTIPLO.SUPERIOR': 'CEILING', 'MULTIPLO.INFERIOR': 'FLOOR', 'REDOND.MULT': 'MROUND', 'LN': 'LN',
+    'SI': 'IF', 'SI.CONJUNTO': 'IFS', 'SI.ERROR': 'IFERROR', 'SI.ND': 'IFNA', 'Y': 'AND', 'O': 'OR', 'NO': 'NOT', 'XO': 'XOR', 'CAMBIAR': 'SWITCH', 'VERDADERO': 'TRUE', 'FALSO': 'FALSE',
+    'ESNUMERO': 'ISNUMBER', 'ESTEXTO': 'ISTEXT', 'ESBLANCO': 'ISBLANK', 'ESERROR': 'ISERROR', 'ESERR': 'ISERR', 'ESNOD': 'ISNA', 'ESLOGICO': 'ISLOGICAL', 'ESNOTEXTO': 'ISNONTEXT', 'ES.PAR': 'ISEVEN', 'ES.IMPAR': 'ISODD', 'NOD': 'NA',
+    'BUSCARV': 'VLOOKUP', 'BUSCARH': 'HLOOKUP', 'BUSCAR': 'LOOKUP', 'BUSCARX': 'XLOOKUP', 'COINCIDIRX': 'XMATCH', 'COINCIDIR': 'MATCH', 'INDICE': 'INDEX', 'ÍNDICE': 'INDEX', 'ELEGIR': 'CHOOSE',
+    'TRANSPONER': 'TRANSPOSE', 'UNICOS': 'UNIQUE', 'ÚNICOS': 'UNIQUE', 'ORDENAR': 'SORT', 'ORDENARPOR': 'SORTBY', 'FILTRAR': 'FILTER', 'SECUENCIA': 'SEQUENCE', 'FILAS': 'ROWS', 'COLUMNAS': 'COLUMNS',
+    'IZQUIERDA': 'LEFT', 'DERECHA': 'RIGHT', 'EXTRAE': 'MID', 'LARGO': 'LEN', 'MAYUSC': 'UPPER', 'MINUSC': 'LOWER', 'NOMPROPIO': 'PROPER', 'ESPACIOS': 'TRIM', 'LIMPIAR': 'CLEAN',
+    'CONCATENAR': 'CONCATENATE', 'UNIRCADENAS': 'TEXTJOIN', 'TEXTO': 'TEXT', 'ENCONTRAR': 'FIND', 'HALLAR': 'SEARCH', 'SUSTITUIR': 'SUBSTITUTE', 'REEMPLAZAR': 'REPLACE', 'REPETIR': 'REPT',
+    'IGUAL': 'EXACT', 'VALOR': 'VALUE', 'SUBTOTALES': 'SUBTOTAL', 'CARACTER': 'CHAR', 'CODIGO': 'CODE'
+  };
   class XErr { constructor(code) { this.code = code; } }
-  const isE = v => v instanceof XErr, E = c => new XErr(c);
+  class Arr { constructor(rows) { this.rows = rows; } get h() { return this.rows.length; } get w() { return this.rows.length ? this.rows[0].length : 0; } }
+  const E = c => new XErr(c), isE = v => v instanceof XErr, isA = v => v instanceof Arr;
   const colIdx = s => { let n = 0; for (const ch of s.toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
-  const RX = { fn: /^([A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-z0-9.ÁÉÍÓÚÑáéíóúñ]*)\s*\(/, ref: /^\$?([A-Za-z]{1,2})\$?(\d+)(?::\$?([A-Za-z]{1,2})\$?(\d+))?/,
-    num: /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/, name: /^[A-Za-zÁÉÍÓÚÑáéíóúñ]+/, op: /^(<=|>=|<>|[-+*/^&=<>(),;%])/ };
+
+  // ---------------------------------------------------------------- tokens
+  const NAME = '[A-Za-z_\\u00C0-\\u017F][A-Za-z0-9_.\\u00C0-\\u017F]*';
+  const RX = {
+    fn: new RegExp('^(' + NAME + ')\\s*\\('), sheet: new RegExp("^(?:'[^']+'|" + NAME + ')!'), err: /^#(N\/A|DIV\/0!|VALUE!|REF!|NAME\?|NUM!|NULL!)/i,
+    col: /^\$?([A-Za-z]{1,3}):\$?([A-Za-z]{1,3})(?![A-Za-z0-9_(.])/, ref: /^\$?([A-Za-z]{1,3})\$?(\d+)(?::\$?([A-Za-z]{1,3})\$?(\d+))?(?![A-Za-z0-9_(.])/,
+    num: /^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/, name: new RegExp('^' + NAME), op: /^(<=|>=|<>|[-+*/^&=<>(),;%{}])/
+  };
   function tokenize(s) {
     const out = []; let i = 0;
     while (i < s.length) {
@@ -577,158 +603,428 @@ const XL = (() => {
         for (;;) { if (j >= rest.length) throw new Error('Text is missing its closing quote "'); if (rest[j] === '"') { if (rest[j + 1] === '"') { v += '"'; j += 2; continue; } break; } v += rest[j++]; }
         out.push({ t: 'str', v }); i += j + 1; continue;
       }
+      if (rest[0] === '#') { if ((m = RX.err.exec(rest))) { out.push({ t: 'err', v: '#' + m[1].toUpperCase() }); i += m[0].length; continue; } throw new Error('Unexpected character: #'); }
+      if ((m = RX.sheet.exec(rest))) { i += m[0].length; continue; }                    // Sheet1!A1 : one sheet, the name is ignored
       if ((m = RX.fn.exec(rest))) { out.push({ t: 'fn', v: m[1].toUpperCase() }); i += m[0].length; continue; }
-      if ((m = /^\$?([A-Za-z]{1,2}):\$?([A-Za-z]{1,2})(?![A-Za-z0-9(])/.exec(rest))) { out.push({ t: 'ref', v: [m[0], m[1], '1', m[2], 'MAX'] }); i += m[0].length; continue; }   // whole columns: A:A
-      if ((m = RX.ref.exec(rest)) && !/^[A-Za-z0-9]/.test(rest.slice(m[0].length))) { out.push({ t: 'ref', v: m }); i += m[0].length; continue; }
+      if ((m = RX.col.exec(rest))) { out.push({ t: 'ref', c1: colIdx(m[1]), r1: 0, c2: colIdx(m[2]), r2: -1 }); i += m[0].length; continue; }   // whole columns: A:A
+      if ((m = RX.ref.exec(rest))) { out.push({ t: 'ref', c1: colIdx(m[1]), r1: +m[2] - 1, c2: m[3] ? colIdx(m[3]) : colIdx(m[1]), r2: m[4] ? +m[4] - 1 : +m[2] - 1, single: !m[3] }); i += m[0].length; continue; }
       if ((m = RX.num.exec(rest))) { out.push({ t: 'num', v: parseFloat(m[0]) }); i += m[0].length; continue; }
       if ((m = RX.name.exec(rest))) { out.push({ t: 'name', v: m[0].toUpperCase() }); i += m[0].length; continue; }
-      if ((m = RX.op.exec(rest))) { out.push({ t: 'op', v: m[0] === ';' ? ',' : m[0] }); i += m[0].length; continue; }
+      if ((m = RX.op.exec(rest))) { out.push({ t: 'op', v: m[0] }); i += m[0].length; continue; }
       throw new Error('Unexpected character: ' + rest[0]);
     }
     return out;
   }
-  const scalar = v => (v && v.range) ? (v.range.length === 1 && v.range[0].length === 1 ? v.range[0][0] : E('#VALUE!')) : v;
-  const num = v => { v = scalar(v); if (isE(v)) return v; if (v === null || v === undefined || v === '') return 0; if (typeof v === 'boolean') return v ? 1 : 0; if (typeof v === 'number') return v; const n = Number(String(v).trim()); return String(v).trim() !== '' && isFinite(n) ? n : E('#VALUE!'); };
-  const str = v => v === null || v === undefined ? '' : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : String(v);
-  const numLike = v => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)));
-  const looseEq = (a, b) => (a === null || b === null) ? a === b : (numLike(a) && numLike(b)) ? Number(a) === Number(b) : str(a).toLowerCase() === str(b).toLowerCase();
-  const cmpAny = (a, b) => (numLike(a) && numLike(b)) ? Number(a) - Number(b) : str(a).toLowerCase().localeCompare(str(b).toLowerCase());
-  const cmpOp = (d, o) => o === '=' ? d === 0 : o === '<>' ? d !== 0 : o === '<' ? d < 0 : o === '>' ? d > 0 : o === '<=' ? d <= 0 : d >= 0;
-  const truthy = v => { v = scalar(v); return typeof v === 'string' ? v.toUpperCase() === 'TRUE' : !!v; };
-  const flat = xs => { const out = []; xs.forEach(x => { if (x && x.range) x.range.forEach(r => r.forEach(c => out.push(c))); else out.push(x); }); return out; };
-  const list = x => (x && x.range) ? flat([x]) : [x];
-  function arith(a, b, o) {
-    a = num(a); if (isE(a)) return a; b = num(b); if (isE(b)) return b;
-    if (o === '+') return a + b; if (o === '-') return a - b; if (o === '*') return a * b; if (o === '^') return Math.pow(a, b);
-    return b === 0 ? E('#DIV/0!') : a / b;
-  }
-  function matcher(crit) {
-    crit = scalar(crit);
-    if (typeof crit === 'number') return v => looseEq(v, crit);
-    const m = /^(<=|>=|<>|<|>|=)?([\s\S]*)$/.exec(str(crit)), op = m[1] || '=', rhs = m[2];
-    if (numLike(rhs)) return v => op === '=' ? looseEq(v, rhs) : op === '<>' ? !looseEq(v, rhs) : numLike(v) && cmpOp(Number(v) - Number(rhs), op);
-    if (op === '=' || op === '<>') {
-      const re = new RegExp('^' + rhs.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
-      return v => (op === '=') === re.test(str(v));
-    }
-    return v => cmpOp(cmpAny(v, rhs), op);
-  }
-  function mask(pairs) {
-    let mk = null;
-    for (let i = 0; i < pairs.length; i += 2) {
-      const vals = list(pairs[i]), f = matcher(pairs[i + 1]), cur = vals.map(f);
-      if (mk && mk.length !== cur.length) return E('#VALUE!');
-      mk = mk ? mk.map((x, k) => x && cur[k]) : cur;
-    }
-    return mk || [];
-  }
-  function aggIfs(valuesArg, pairs, avg) {
-    const vals = list(valuesArg), mk = mask(pairs); if (isE(mk)) return mk; if (mk.length !== vals.length) return E('#VALUE!');
-    let s = 0, n = 0; vals.forEach((v, k) => { if (mk[k] && typeof v === 'number') { s += v; n++; } });
-    return avg ? (n ? s / n : E('#DIV/0!')) : s;
-  }
-  function call(raw, a) {
-    const n = ALIAS[raw] || raw;
-    const nums = () => { const f = flat(a); for (const v of f) if (isE(v)) return v; return f.filter(v => typeof v === 'number'); };
-    switch (n) {
-      case 'SUM': { const v = nums(); return isE(v) ? v : v.reduce((s, x) => s + x, 0); }
-      case 'AVERAGE': { const v = nums(); return isE(v) ? v : v.length ? v.reduce((s, x) => s + x, 0) / v.length : E('#DIV/0!'); }
-      case 'COUNT': { const v = nums(); return isE(v) ? v : v.length; }
-      case 'COUNTA': return flat(a).filter(v => v !== null && v !== '').length;
-      case 'MIN': case 'MAX': { const v = nums(); return isE(v) ? v : v.length ? Math[n.toLowerCase()](...v) : 0; }
-      case 'ABS': { const v = num(a[0]); return isE(v) ? v : Math.abs(v); }
-      case 'ROUND': { const v = num(a[0]), d = num(a[1] == null ? 0 : a[1]); if (isE(v)) return v; if (isE(d)) return d; const f = Math.pow(10, d); return Math.round((v + Math.sign(v) * 1e-12) * f) / f; }
-      case 'IF': { const c = scalar(a[0]); if (isE(c)) return c; return truthy(c) ? (a[1] === undefined ? true : a[1]) : (a[2] === undefined ? false : a[2]); }
-      case 'IFERROR': return isE(scalar(a[0])) ? a[1] : a[0];
-      case 'AND': return flat(a).every(truthy);
-      case 'OR': return flat(a).some(truthy);
-      case 'COUNTIF': case 'COUNTIFS': { const mk = mask(a); return isE(mk) ? mk : mk.filter(Boolean).length; }
-      case 'SUMIF': return aggIfs(a[2] != null ? a[2] : a[0], [a[0], a[1]], false);
-      case 'SUMIFS': return aggIfs(a[0], a.slice(1), false);
-      case 'AVERAGEIF': return aggIfs(a[2] != null ? a[2] : a[0], [a[0], a[1]], true);
-      case 'AVERAGEIFS': return aggIfs(a[0], a.slice(1), true);
-      case 'XLOOKUP': {
-        const key = scalar(a[0]); if (isE(key)) return key;
-        const look = list(a[1]), ret = list(a[2]); if (look.length !== ret.length) return E('#VALUE!');
-        const k = look.findIndex(v => looseEq(v, key));
-        return k < 0 ? (a[3] != null ? a[3] : E('#N/A')) : ret[k];
-      }
-      case 'VLOOKUP': {
-        const key = scalar(a[0]); if (isE(key)) return key;
-        const tb = a[1] && a[1].range; if (!tb) return E('#VALUE!');
-        const col = num(a[2]); if (isE(col)) return col; if (col < 1 || col > tb[0].length) return E('#REF!');
-        const exact = a[3] != null && !truthy(a[3]); let k = -1;
-        if (exact) k = tb.findIndex(r => looseEq(r[0], key));
-        else for (let i = 0; i < tb.length; i++) { if (looseEq(tb[i][0], key)) { k = i; break; } if (cmpAny(tb[i][0], key) <= 0) k = i; else break; }
-        return k < 0 ? E('#N/A') : tb[k][col - 1];
-      }
-      case 'MATCH': {
-        const key = scalar(a[0]); if (isE(key)) return key;
-        const arr = list(a[1]), type = a[2] == null ? 1 : num(a[2]); if (isE(type)) return type;
-        let k = -1;
-        if (type === 0) k = arr.findIndex(v => looseEq(v, key));
-        else for (let i = 0; i < arr.length; i++) { if (cmpAny(arr[i], key) <= 0) k = i; else break; }
-        return k < 0 ? E('#N/A') : k + 1;
-      }
-      case 'INDEX': {
-        const tb = a[0] && a[0].range; if (!tb) return a[0];
-        const r = num(a[1] == null ? 1 : a[1]), c = num(a[2] == null ? 1 : a[2]); if (isE(r)) return r; if (isE(c)) return c;
-        let rr = r, cc = c; if (tb.length === 1 && a[2] == null) { rr = 1; cc = r; }
-        if (rr < 1 || rr > tb.length || cc < 1 || cc > tb[0].length) return E('#REF!');
-        return tb[rr - 1][cc - 1];
-      }
-      default: return E('#NAME? (' + raw + ')');
-    }
-  }
-  function evaluate(formula, grid) {
-    const src = String(formula || '').trim();
-    if (src[0] !== '=') return { error: 'A formula must start with =' };
-    let toks; try { toks = tokenize(src.slice(1)); } catch (e) { return { error: e.message }; }
+
+  // ---------------------------------------------------------------- parser (precedence of Excel: comparison < & < + - < * / < ^ < unary - < %)
+  function parse(tokens) {
     let p = 0;
-    const isOp = v => toks[p] && toks[p].t === 'op' && toks[p].v === v;
-    const expect = v => { if (!isOp(v)) throw new Error('Expected "' + v + '"'); p++; };
-    const cell = (r, c) => { const row = grid[r], v = row ? row[c] : undefined; return v === undefined || v === '' ? null : v; };
-    const refVal = m => {
-      if (m[4] === 'MAX') m = [m[0], m[1], m[2], m[3], String(Math.max(1, grid.length))];   // A:A -> rows 1..last row of the sheet
-      const c1 = colIdx(m[1]), r1 = +m[2] - 1; if (!m[3]) return cell(r1, c1);
-      const c2 = colIdx(m[3]), r2 = +m[4] - 1, rows = [];
-      for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) { const row = []; for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++) row.push(cell(r, c)); rows.push(row); }
-      return { range: rows };
-    };
-    function primary() {
-      const tk = toks[p++]; if (!tk) throw new Error('The formula ends too early');
-      if (tk.t === 'num' || tk.t === 'str') return tk.v;
-      if (tk.t === 'ref') return refVal(tk.v);
-      if (tk.t === 'name') { const n = ALIAS[tk.v] || tk.v; return n === 'TRUE' ? true : n === 'FALSE' ? false : E('#NAME? (' + tk.v + ')'); }
-      if (tk.t === 'fn') {
-        const args = [];
-        if (!isOp(')')) { for (;;) { args.push(isOp(',') || isOp(')') ? null : comparison()); if (isOp(',')) { p++; continue; } break; } }
-        expect(')'); return call(tk.v, args);
+    const isOp = v => !!tokens[p] && tokens[p].t === 'op' && tokens[p].v === v;
+    const expectOp = v => { if (!isOp(v)) throw new Error('Expected "' + v + '"' + (tokens[p] ? ' but found "' + (tokens[p].v === undefined ? tokens[p].t : tokens[p].v) + '"' : ': the formula ends too early')); p++; };
+    const CMP = ['=', '<>', '<', '>', '<=', '>='];
+    function comparison() { let l = concat(); while (tokens[p] && tokens[p].t === 'op' && CMP.indexOf(tokens[p].v) >= 0) { const o = tokens[p++].v; l = { t: 'bin', op: o, a: l, b: concat() }; } return l; }
+    function concat() { let l = additive(); while (isOp('&')) { p++; l = { t: 'bin', op: '&', a: l, b: additive() }; } return l; }
+    function additive() { let l = term(); while (isOp('+') || isOp('-')) { const o = tokens[p++].v; l = { t: 'bin', op: o, a: l, b: term() }; } return l; }
+    function term() { let l = power(); while (isOp('*') || isOp('/')) { const o = tokens[p++].v; l = { t: 'bin', op: o, a: l, b: power() }; } return l; }
+    function power() { let l = unary(); while (isOp('^')) { p++; l = { t: 'bin', op: '^', a: l, b: unary() }; } return l; }
+    function unary() { if (isOp('-')) { p++; return { t: 'un', a: unary() }; } if (isOp('+')) { p++; return unary(); } return postfix(); }
+    function postfix() { let v = primary(); while (isOp('%')) { p++; v = { t: 'pct', a: v }; } return v; }
+    function args() {
+      const out = [];
+      if (isOp(')')) { p++; return out; }
+      for (;;) {
+        out.push(isOp(',') || isOp(';') || isOp(')') ? { t: 'empty' } : comparison());
+        if (isOp(',') || isOp(';')) { p++; continue; }
+        break;
       }
-      if (tk.t === 'op' && tk.v === '(') { const v = comparison(); expect(')'); return v; }
+      expectOp(')'); return out;
+    }
+    function arrayConst() {
+      const rows = [[]];
+      for (;;) {
+        let neg = false; if (isOp('-')) { p++; neg = true; }
+        const tk = tokens[p++]; if (!tk) throw new Error('The array { } is not closed');
+        let v;
+        if (tk.t === 'num') v = neg ? -tk.v : tk.v; else if (tk.t === 'str') v = tk.v; else if (tk.t === 'err') v = E(tk.v);
+        else if (tk.t === 'name' && (tk.v === 'TRUE' || tk.v === 'FALSE' || ALIAS[tk.v] === 'TRUE' || ALIAS[tk.v] === 'FALSE')) v = (ALIAS[tk.v] || tk.v) === 'TRUE';
+        else throw new Error('An array { } can only hold numbers, text and TRUE/FALSE');
+        rows[rows.length - 1].push(v);
+        if (isOp(',')) { p++; continue; }
+        if (isOp(';')) { p++; rows.push([]); continue; }
+        expectOp('}'); break;
+      }
+      const w = rows[0].length; if (rows.some(r => r.length !== w)) throw new Error('The rows of the array { } must have the same length');
+      return { t: 'arr', rows };
+    }
+    function primary() {
+      const tk = tokens[p++]; if (!tk) throw new Error('The formula ends too early');
+      if (tk.t === 'num' || tk.t === 'str') return { t: tk.t, v: tk.v };
+      if (tk.t === 'err') return { t: 'err', v: tk.v };
+      if (tk.t === 'ref') return tk;
+      if (tk.t === 'name') return { t: 'name', v: tk.v };
+      if (tk.t === 'fn') return { t: 'fn', v: tk.v, args: args() };
+      if (tk.t === 'op' && tk.v === '(') { const v = comparison(); expectOp(')'); return v; }
+      if (tk.t === 'op' && tk.v === '{') return arrayConst();
       throw new Error('Unexpected "' + tk.v + '"');
     }
-    function postfix() { let v = primary(); while (isOp('%')) { p++; v = arith(v, 100, '/'); } return v; }
-    function unary() { if (isOp('-')) { p++; return arith(0, unary(), '-'); } if (isOp('+')) { p++; return unary(); } return postfix(); }
-    function power() { let v = unary(); while (isOp('^')) { p++; v = arith(v, unary(), '^'); } return v; }
-    function term() { let v = power(); while (isOp('*') || isOp('/')) { const o = toks[p++].v; v = arith(v, power(), o); } return v; }
-    function additive() { let v = term(); while (isOp('+') || isOp('-')) { const o = toks[p++].v; v = arith(v, term(), o); } return v; }
-    function concat() { let v = additive(); while (isOp('&')) { p++; const a = scalar(v), b = scalar(additive()); v = isE(a) ? a : isE(b) ? b : str(a) + str(b); } return v; }
-    function comparison() {
-      let v = concat();
-      while (['=', '<>', '<', '>', '<=', '>='].some(o => isOp(o))) { const o = toks[p++].v, a = scalar(v), b = scalar(concat()); v = isE(a) ? a : isE(b) ? b : cmpOp(cmpAny(a === null ? 0 : a, b === null ? 0 : b), o); }
-      return v;
+    const ast = comparison();
+    if (p < tokens.length) throw new Error('Unexpected "' + (tokens[p].v === undefined ? tokens[p].t : tokens[p].v) + '"');
+    return ast;
+  }
+
+  // ---------------------------------------------------------------- values
+  const numLike = v => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)));
+  const fmtNum = n => (Number.isInteger(n) ? String(n) : String(Number(n.toPrecision(15))));
+  const str = v => v === null || v === undefined ? '' : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : typeof v === 'number' ? fmtNum(v) : String(v);
+  function toNum(v) { if (isE(v)) return v; if (v === null || v === undefined || v === '') return 0; if (typeof v === 'boolean') return v ? 1 : 0; if (typeof v === 'number') return v; const s = String(v).trim(), n = Number(s); return s !== '' && isFinite(n) ? n : E('#VALUE!'); }
+  function toBool(v) { if (isE(v)) return v; if (v === null || v === undefined || v === '') return false; if (typeof v === 'boolean') return v; if (typeof v === 'number') return v !== 0; const u = String(v).trim().toUpperCase(); return u === 'TRUE' ? true : u === 'FALSE' ? false : E('#VALUE!'); }
+  const rank = v => typeof v === 'number' ? 1 : typeof v === 'string' ? 2 : 3;
+  /* three-way comparison like Excel: numbers < text < logicals, text without case; an empty cell takes the type of the other side */
+  function cmp(a, b) {
+    if (a === null || a === undefined) a = typeof b === 'string' ? '' : typeof b === 'boolean' ? false : 0;
+    if (b === null || b === undefined) b = typeof a === 'string' ? '' : typeof a === 'boolean' ? false : 0;
+    const ra = rank(a), rb = rank(b); if (ra !== rb) return ra - rb;
+    if (ra === 2) { const x = a.toLowerCase(), y = b.toLowerCase(); return x < y ? -1 : x > y ? 1 : 0; }
+    return a === b ? 0 : a < b ? -1 : 1;
+  }
+  const cmpOp = (d, o) => o === '=' ? d === 0 : o === '<>' ? d !== 0 : o === '<' ? d < 0 : o === '>' ? d > 0 : o === '<=' ? d <= 0 : d >= 0;
+  const looseEq = (a, b) => (a === null || b === null || a === undefined || b === undefined) ? (a === null || a === undefined) === (b === null || b === undefined) : (numLike(a) && numLike(b)) ? Number(a) === Number(b) : str(a).toLowerCase() === str(b).toLowerCase();
+  const cellAt = (a, r, c) => { if (!isA(a)) return a; const rr = a.h === 1 ? 0 : r, cc = a.w === 1 ? 0 : c; return rr >= a.h || cc >= a.w ? E('#N/A') : a.rows[rr][cc]; };
+  /* apply f to scalars; any array argument is broadcast (a 1-row / 1-column array repeats) */
+  function lift(args, f) {
+    if (!args.some(isA)) return f.apply(null, args);
+    let h = 1, w = 1; args.forEach(a => { if (isA(a)) { h = Math.max(h, a.h); w = Math.max(w, a.w); } });
+    const rows = [];
+    for (let r = 0; r < h; r++) { const row = []; for (let c = 0; c < w; c++) row.push(f.apply(null, args.map(a => cellAt(a, r, c)))); rows.push(row); }
+    return new Arr(rows);
+  }
+  const cellsOf = a => isA(a) ? [].concat.apply([], a.rows) : [a];
+  const firstErr = vals => vals.find(isE);
+  function scalarOf(v) { if (isA(v)) return v.h === 1 && v.w === 1 ? v.rows[0][0] : E('#VALUE!'); return v; }
+  function arith(o, a, b) {
+    a = toNum(a); if (isE(a)) return a; b = toNum(b); if (isE(b)) return b;
+    if (o === '+') return a + b; if (o === '-') return a - b; if (o === '*') return a * b;
+    if (o === '^') { const r = Math.pow(a, b); return isFinite(r) ? r : (a === 0 && b < 0 ? E('#DIV/0!') : E('#NUM!')); }
+    return b === 0 ? E('#DIV/0!') : a / b;
+  }
+  function binop(o, a, b) {
+    return lift([a, b], (x, y) => {
+      if (isE(x)) return x; if (isE(y)) return y;
+      if (o === '&') return str(x) + str(y);
+      if (CMPS.indexOf(o) >= 0) return cmpOp(cmp(x, y), o);
+      return arith(o, x, y);
+    });
+  }
+  const CMPS = ['=', '<>', '<', '>', '<=', '>='];
+
+  // ---------------------------------------------------------------- criteria (COUNTIF family)
+  function matcher(crit) {
+    crit = scalarOf(crit);
+    if (typeof crit === 'number') return v => typeof v === 'number' ? v === crit : (typeof v === 'string' && numLike(v) && Number(v) === crit);
+    if (typeof crit === 'boolean') return v => v === crit;
+    const m = /^(<=|>=|<>|<|>|=)?([\s\S]*)$/.exec(str(crit)), op = m[1] || '=', rhs = m[2];
+    if (numLike(rhs)) return v => op === '=' ? looseEq(v, rhs) : op === '<>' ? !looseEq(v, rhs) : (typeof v === 'number' || (typeof v === 'string' && numLike(v))) && cmpOp(Number(v) - Number(rhs), op);
+    if (op === '=' || op === '<>') {
+      const re = new RegExp('^' + rhs.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[\\s\\S]*').replace(/\?/g, '.') + '$', 'i');
+      return v => (op === '=') === re.test(str(v));
+    }
+    return v => typeof v === 'string' && cmpOp(cmp(v, rhs), op);
+  }
+  function ifsMask(pairs) {
+    if (!pairs.length || pairs.length % 2) return E('#VALUE!');
+    let mk = null, h = -1, w = -1;
+    for (let i = 0; i < pairs.length; i += 2) {
+      const rg = isA(pairs[i]) ? pairs[i] : new Arr([[pairs[i]]]); if (isE(pairs[i])) return pairs[i];
+      if (h >= 0 && (rg.h !== h || rg.w !== w)) return E('#VALUE!'); h = rg.h; w = rg.w;
+      const f = matcher(pairs[i + 1]), cur = cellsOf(rg).map(v => !isE(v) && f(v));
+      mk = mk ? mk.map((x, k) => x && cur[k]) : cur;
+    }
+    return mk;
+  }
+  function pick(vals, mk) { return vals.filter((v, k) => mk[k]); }
+  const toNumbers = xs => xs.filter(v => typeof v === 'number');
+
+  // ---------------------------------------------------------------- rounding helpers
+  function rnd(v, d, mode) {   // Excel works on the 15 significant digits that are shown, so 1.005 rounds to 1.01
+    const pos = d >= 0, p = Math.pow(10, pos ? d : -d), a = Number((pos ? Math.abs(v) * p : Math.abs(v) / p).toPrecision(15));
+    const r = mode === 'up' ? Math.ceil(a) : mode === 'down' ? Math.floor(a) : Math.floor(a + 0.5);
+    return Math.sign(v) * (pos ? r / p : r * p);
+  }
+  /* numbers of the arguments: cells of ranges/arrays count only if they are numbers; values typed in the formula are coerced (SUM(TRUE) = 1) */
+  function nums(args) {
+    const out = [];
+    for (const a of args) {
+      if (isA(a)) { for (const v of cellsOf(a)) { if (isE(v)) return v; if (typeof v === 'number') out.push(v); } }
+      else if (isE(a)) return a;
+      else if (a === null || a === undefined) continue;
+      else { const n = toNum(a); if (isE(n)) return n; out.push(n); }
+    }
+    return out;
+  }
+  const withNums = (args, f) => { const v = nums(args); return isE(v) ? v : f(v); };
+  const sum = v => v.reduce((s, x) => s + x, 0);
+  const sorted = v => v.slice().sort((a, b) => a - b);
+  function pctile(v, k) { if (!v.length || k < 0 || k > 1) return E('#NUM!'); const s = sorted(v), pos = k * (s.length - 1), lo = Math.floor(pos), hi = Math.ceil(pos); return s[lo] + (s[hi] - s[lo]) * (pos - lo); }
+  function variance(v, sample) { if (v.length < (sample ? 2 : 1)) return E('#DIV/0!'); const m = sum(v) / v.length; return sum(v.map(x => (x - m) * (x - m))) / (v.length - (sample ? 1 : 0)); }
+  function textFmt(v, f) {
+    v = scalarOf(v); if (isE(v)) return v;
+    if (typeof v === 'string' && !numLike(v)) return v;
+    const n = Number(typeof v === 'boolean' ? (v ? 1 : 0) : v === null ? 0 : v), lit = [];
+    const clean = str(f).replace(/"([^"]*)"/g, (m0, t) => { lit.push(t); return '\u0001'; }), m = /[#0][#0,]*(?:\.[0#]*)?/.exec(clean);   // quoted text is kept as it is
+    if (!m) return str(f);
+    const pct = clean.indexOf('%') >= 0, x = pct ? n * 100 : n, pat = m[0], dot = pat.indexOf('.'), intPat = dot < 0 ? pat : pat.slice(0, dot), decPat = dot < 0 ? '' : pat.slice(dot + 1);
+    const req = (decPat.match(/0/g) || []).length, opt = (decPat.match(/#/g) || []).length, r = rnd(x, req + opt, 'half'), s = Math.abs(r).toFixed(req + opt);
+    let ip = s.split('.')[0], dp = s.split('.')[1] || '';
+    while (dp.length > req && dp.charAt(dp.length - 1) === '0') dp = dp.slice(0, -1);
+    ip = ip.replace(/^0+/, ''); const minInt = (intPat.match(/0/g) || []).length; while (ip.length < minInt) ip = '0' + ip;
+    if (intPat.indexOf(',') >= 0) ip = ip.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const fill = t => t.replace(/\u0001/g, () => lit.shift() || '');
+    return (r < 0 ? '-' : '') + fill(clean.slice(0, m.index)) + ip + (dp ? '.' + dp : '') + fill(clean.slice(m.index + pat.length));
+  }
+
+  // ---------------------------------------------------------------- functions
+  const F = {};
+  const def = (names, f) => names.split(' ').forEach(n => { F[n] = f; });
+  const S = f => a => lift(a, (...x) => { const e = firstErr(x); return e || f(...x); });                  // scalar function, broadcast over arrays, errors pass through
+  const N1 = f => S(x => { const n = toNum(x); return isE(n) ? n : f(n); });
+  // aggregation
+  def('SUM', a => withNums(a, sum));
+  def('PRODUCT', a => withNums(a, v => v.reduce((p, x) => p * x, 1)));
+  def('SUMSQ', a => withNums(a, v => sum(v.map(x => x * x))));
+  def('AVERAGE', a => withNums(a, v => v.length ? sum(v) / v.length : E('#DIV/0!')));
+  def('COUNT', a => { const out = []; for (const x of a) { if (isA(x)) cellsOf(x).forEach(v => { if (typeof v === 'number') out.push(v); }); else if (!isE(x) && x !== null && !isE(toNum(x))) out.push(1); } return out.length; });
+  def('COUNTA', a => sum(a.map(x => cellsOf(x).filter(v => v !== null && v !== undefined && v !== '').length)));
+  def('COUNTBLANK', a => sum(a.map(x => cellsOf(x).filter(v => v === null || v === undefined || v === '').length)));
+  def('MAX', a => withNums(a, v => v.length ? Math.max.apply(null, v) : 0));
+  def('MIN', a => withNums(a, v => v.length ? Math.min.apply(null, v) : 0));
+  def('MEDIAN', a => withNums(a, v => { if (!v.length) return E('#NUM!'); const s = sorted(v), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }));
+  def('MODE MODE.SNGL', a => withNums(a, v => { const c = new Map(); v.forEach(x => c.set(x, (c.get(x) || 0) + 1)); let best = null, n = 1; c.forEach((k, x) => { if (k > n) { best = x; n = k; } }); return best === null ? E('#N/A') : best; }));
+  def('STDEV STDEV.S', a => withNums(a, v => { const r = variance(v, true); return isE(r) ? r : Math.sqrt(r); }));
+  def('STDEVP STDEV.P', a => withNums(a, v => { const r = variance(v, false); return isE(r) ? r : Math.sqrt(r); }));
+  def('VAR VAR.S', a => withNums(a, v => variance(v, true)));
+  def('VARP VAR.P', a => withNums(a, v => variance(v, false)));
+  def('LARGE', a => { const v = nums([a[0]]), k = toNum(scalarOf(a[1])); if (isE(v)) return v; if (isE(k)) return k; return k < 1 || k > v.length ? E('#NUM!') : sorted(v)[v.length - Math.floor(k)]; });
+  def('SMALL', a => { const v = nums([a[0]]), k = toNum(scalarOf(a[1])); if (isE(v)) return v; if (isE(k)) return k; return k < 1 || k > v.length ? E('#NUM!') : sorted(v)[Math.floor(k) - 1]; });
+  def('PERCENTILE PERCENTILE.INC', a => { const v = nums([a[0]]), k = toNum(scalarOf(a[1])); if (isE(v)) return v; if (isE(k)) return k; return pctile(v, k); });
+  def('QUARTILE QUARTILE.INC', a => { const v = nums([a[0]]), q = toNum(scalarOf(a[1])); if (isE(v)) return v; if (isE(q)) return q; return q < 0 || q > 4 ? E('#NUM!') : pctile(v, Math.floor(q) / 4); });
+  def('RANK RANK.EQ', a => { const x = toNum(scalarOf(a[0])), v = nums([a[1]]), asc = a[2] != null && toNum(scalarOf(a[2])) !== 0; if (isE(x)) return x; if (isE(v)) return v; return v.indexOf(x) < 0 ? E('#N/A') : 1 + v.filter(y => asc ? y < x : y > x).length; });
+  def('SUMPRODUCT', a => {
+    if (!a.length) return E('#VALUE!'); const ar = a.map(x => isA(x) ? x : new Arr([[x]])), h = ar[0].h, w = ar[0].w;
+    if (ar.some(x => x.h !== h || x.w !== w)) return E('#VALUE!'); let s = 0;
+    for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) { let p = 1; for (const x of ar) { const v = x.rows[r][c]; if (isE(v)) return v; p *= typeof v === 'number' ? v : 0; } s += p; }
+    return s;
+  });
+  def('SUBTOTAL', a => {
+    const fn = toNum(scalarOf(a[0])); if (isE(fn)) return fn; const code = fn > 100 ? fn - 100 : fn, rest = a.slice(1);
+    const m = { 1: 'AVERAGE', 2: 'COUNT', 3: 'COUNTA', 4: 'MAX', 5: 'MIN', 6: 'PRODUCT', 7: 'STDEV', 8: 'STDEVP', 9: 'SUM', 10: 'VAR', 11: 'VARP' }[code];
+    return m ? F[m](rest) : E('#VALUE!');
+  });
+  // criteria family
+  def('COUNTIF COUNTIFS', a => { const mk = ifsMask(a); return isE(mk) ? mk : mk.filter(Boolean).length; });
+  const agg = (vals, crit, f) => { const mk = ifsMask(crit); if (isE(mk)) return mk; const cv = cellsOf(vals); if (cv.length !== mk.length) return E('#VALUE!'); return f(toNumbers(pick(cv, mk))); };
+  def('SUMIFS', a => agg(a[0], a.slice(1), sum));
+  def('SUMIF', a => agg(a[2] != null ? a[2] : a[0], [a[0], a[1]], sum));
+  def('AVERAGEIFS', a => agg(a[0], a.slice(1), v => v.length ? sum(v) / v.length : E('#DIV/0!')));
+  def('AVERAGEIF', a => agg(a[2] != null ? a[2] : a[0], [a[0], a[1]], v => v.length ? sum(v) / v.length : E('#DIV/0!')));
+  def('MAXIFS', a => agg(a[0], a.slice(1), v => v.length ? Math.max.apply(null, v) : 0));
+  def('MINIFS', a => agg(a[0], a.slice(1), v => v.length ? Math.min.apply(null, v) : 0));
+  // math
+  def('ABS', N1(Math.abs)); def('SQRT', N1(x => x < 0 ? E('#NUM!') : Math.sqrt(x))); def('EXP', N1(Math.exp)); def('SIGN', N1(Math.sign)); def('INT', N1(Math.floor));
+  def('LN', N1(x => x <= 0 ? E('#NUM!') : Math.log(x))); def('LOG10', N1(x => x <= 0 ? E('#NUM!') : Math.log10(x)));
+  def('LOG', S((x, b) => { x = toNum(x); b = b === null || b === undefined ? 10 : toNum(b); if (isE(x)) return x; if (isE(b)) return b; return x <= 0 || b <= 0 || b === 1 ? E('#NUM!') : Math.log(x) / Math.log(b); }));
+  def('PI', () => Math.PI);
+  const roundFn = mode => S((x, d) => { x = toNum(x); d = d === null || d === undefined ? 0 : toNum(d); if (isE(x)) return x; if (isE(d)) return d; return rnd(x, Math.trunc(d), mode); });
+  def('ROUND', roundFn('half')); def('ROUNDUP', roundFn('up')); def('ROUNDDOWN', roundFn('down'));
+  def('TRUNC', S((x, d) => { x = toNum(x); d = d === null || d === undefined ? 0 : toNum(d); if (isE(x)) return x; if (isE(d)) return d; return rnd(x, Math.trunc(d), 'down'); }));
+  def('MOD', S((x, d) => { x = toNum(x); d = toNum(d); if (isE(x)) return x; if (isE(d)) return d; return d === 0 ? E('#DIV/0!') : x - d * Math.floor(x / d); }));
+  def('POWER', S((x, y) => arith('^', x, y)));
+  def('CEILING', S((x, s) => { x = toNum(x); s = s === null || s === undefined ? 1 : toNum(s); if (isE(x)) return x; if (isE(s)) return s; if (s === 0) return 0; return x > 0 && s < 0 ? E('#NUM!') : Math.ceil(Number((x / s).toPrecision(15))) * s; }));
+  def('FLOOR', S((x, s) => { x = toNum(x); s = s === null || s === undefined ? 1 : toNum(s); if (isE(x)) return x; if (isE(s)) return s; if (s === 0) return E('#DIV/0!'); return x > 0 && s < 0 ? E('#NUM!') : Math.floor(Number((x / s).toPrecision(15))) * s; }));
+  def('MROUND', S((x, m) => { x = toNum(x); m = toNum(m); if (isE(x)) return x; if (isE(m)) return m; if (m === 0) return 0; return x * m < 0 ? E('#NUM!') : Math.round(Number((x / m).toPrecision(15))) * m; }));
+  def('ISEVEN', N1(x => Math.floor(Math.abs(x)) % 2 === 0)); def('ISODD', N1(x => Math.floor(Math.abs(x)) % 2 === 1));
+  // logical (IF, IFS, IFERROR, IFNA, SWITCH, CHOOSE and LET are lazy: see evalFn)
+  def('TRUE', () => true); def('FALSE', () => false);
+  const bools = a => { const out = []; for (const x of a) { if (isA(x)) cellsOf(x).forEach(v => { if (isE(v)) out.push(v); else if (typeof v === 'boolean' || typeof v === 'number') out.push(toBool(v)); else if (typeof v === 'string' && /^(true|false)$/i.test(v.trim())) out.push(toBool(v)); }); else out.push(toBool(x)); } return out; };
+  def('AND', a => { const b = bools(a); return b.find(isE) || (b.length ? b.every(Boolean) : E('#VALUE!')); });
+  def('OR', a => { const b = bools(a); return b.find(isE) || (b.length ? b.some(Boolean) : E('#VALUE!')); });
+  def('XOR', a => { const b = bools(a); return b.find(isE) || b.filter(Boolean).length % 2 === 1; });
+  def('NOT', S(x => { const b = toBool(x); return isE(b) ? b : !b; }));
+  def('NA', () => E('#N/A'));
+  def('ISNUMBER', x => lift(x, v => typeof v === 'number')); def('ISTEXT', x => lift(x, v => typeof v === 'string')); def('ISNONTEXT', x => lift(x, v => typeof v !== 'string'));
+  def('ISLOGICAL', x => lift(x, v => typeof v === 'boolean')); def('ISBLANK', x => lift(x, v => v === null || v === undefined));
+  def('ISERROR', x => lift(x, v => isE(v))); def('ISERR', x => lift(x, v => isE(v) && v.code !== '#N/A')); def('ISNA', x => lift(x, v => isE(v) && v.code === '#N/A'));
+  // lookup
+  const vec = x => isA(x) ? cellsOf(x) : [x];
+  function matchIndex(key, arr, type) {
+    if (type === 0) { const wild = typeof key === 'string' && /[*?]/.test(key), f = wild ? matcher(key) : null; return arr.findIndex(v => wild ? typeof v === 'string' && f(v) : looseEq(v, key)); }
+    let k = -1;
+    if (type === 1) { for (let i = 0; i < arr.length; i++) { if (arr[i] === null || arr[i] === undefined) continue; if (rank(arr[i]) === rank(key) && cmp(arr[i], key) <= 0) k = i; else if (rank(arr[i]) === rank(key)) break; } }
+    else { for (let i = 0; i < arr.length; i++) { if (rank(arr[i]) === rank(key) && cmp(arr[i], key) >= 0) k = i; else if (rank(arr[i]) === rank(key)) break; } }
+    return k;
+  }
+  def('MATCH', a => { const key = scalarOf(a[0]); if (isE(key)) return key; const t = a[2] == null ? 1 : toNum(scalarOf(a[2])); if (isE(t)) return t; const k = matchIndex(key, vec(a[1]), t === 0 ? 0 : t > 0 ? 1 : -1); return k < 0 ? E('#N/A') : k + 1; });
+  def('XMATCH', a => {
+    const key = scalarOf(a[0]); if (isE(key)) return key; const arr = vec(a[1]), mm = a[2] == null ? 0 : toNum(scalarOf(a[2])), sm = a[3] == null ? 1 : toNum(scalarOf(a[3])), idx = sm < 0 ? arr.map((_, i) => arr.length - 1 - i) : arr.map((_, i) => i);
+    let best = -1;
+    for (const i of idx) { const v = arr[i]; if (mm === 2 ? (typeof key === 'string' ? typeof v === 'string' && matcher(key)(v) : looseEq(v, key)) : looseEq(v, key)) return i + 1; }
+    if (mm === -1 || mm === 1) { arr.forEach((v, i) => { if (rank(v) !== rank(key) || v === null) return; const d = cmp(v, key); if ((mm === -1 && d < 0 && (best < 0 || cmp(v, arr[best]) > 0)) || (mm === 1 && d > 0 && (best < 0 || cmp(v, arr[best]) < 0))) best = i; }); }
+    return best < 0 ? E('#N/A') : best + 1;
+  });
+  def('XLOOKUP', a => {
+    const key = scalarOf(a[0]); if (isE(key)) return key;
+    const look = a[1], ret = isA(a[2]) ? a[2] : new Arr([[a[2]]]), vert = !isA(look) || look.w === 1, lv = vec(look);
+    if ((vert ? ret.h : ret.w) !== lv.length) return E('#VALUE!');
+    const m = F.XMATCH([key, new Arr(vert ? lv.map(v => [v]) : [lv]), a[4], a[5]]);
+    if (isE(m)) return m.code === '#N/A' && a[3] != null ? a[3] : m;
+    if (vert) return ret.w === 1 ? ret.rows[m - 1][0] : new Arr([ret.rows[m - 1]]);
+    return ret.h === 1 ? ret.rows[0][m - 1] : new Arr(ret.rows.map(r => [r[m - 1]]));
+  });
+  def('VLOOKUP', a => {
+    const key = scalarOf(a[0]); if (isE(key)) return key; const tb = a[1]; if (!isA(tb)) return E('#VALUE!');
+    const col = toNum(scalarOf(a[2])); if (isE(col)) return col; if (col < 1) return E('#VALUE!'); if (col > tb.w) return E('#REF!');
+    const exact = a[3] != null && toBool(scalarOf(a[3])) === false, k = matchIndex(key, tb.rows.map(r => r[0]), exact ? 0 : 1);
+    return k < 0 ? E('#N/A') : tb.rows[k][col - 1];
+  });
+  def('HLOOKUP', a => {
+    const key = scalarOf(a[0]); if (isE(key)) return key; const tb = a[1]; if (!isA(tb)) return E('#VALUE!');
+    const row = toNum(scalarOf(a[2])); if (isE(row)) return row; if (row < 1) return E('#VALUE!'); if (row > tb.h) return E('#REF!');
+    const exact = a[3] != null && toBool(scalarOf(a[3])) === false, k = matchIndex(key, tb.rows[0], exact ? 0 : 1);
+    return k < 0 ? E('#N/A') : tb.rows[row - 1][k];
+  });
+  def('LOOKUP', a => { const key = scalarOf(a[0]); if (isE(key)) return key; const lv = vec(a[1]), rv = a[2] != null ? vec(a[2]) : lv, k = matchIndex(key, lv, 1); return k < 0 || k >= rv.length ? E('#N/A') : rv[k]; });
+  def('INDEX', a => {
+    const tb = isA(a[0]) ? a[0] : new Arr([[a[0]]]); let r = a[1] == null ? 0 : toNum(scalarOf(a[1])), c = a[2] == null ? 0 : toNum(scalarOf(a[2]));
+    if (isE(r)) return r; if (isE(c)) return c;
+    if (a[2] == null && tb.h === 1 && tb.w > 1) { c = r; r = 1; } else if (a[2] == null && tb.w === 1) { c = 1; }
+    r = Math.trunc(r); c = Math.trunc(c);
+    if (r < 0 || c < 0 || r > tb.h || c > tb.w) return E('#REF!');
+    if (r === 0 && c === 0) return tb;
+    if (r === 0) return new Arr(tb.rows.map(row => [row[c - 1]]));
+    if (c === 0) return new Arr([tb.rows[r - 1].slice()]);
+    return tb.rows[r - 1][c - 1];
+  });
+  def('ROWS', a => isA(a[0]) ? a[0].h : 1); def('COLUMNS', a => isA(a[0]) ? a[0].w : 1);
+  def('TRANSPOSE', a => { const t = isA(a[0]) ? a[0] : new Arr([[a[0]]]); return new Arr(t.rows[0].map((_, c) => t.rows.map(r => r[c]))); });
+  def('SEQUENCE', a => {
+    const R = toNum(scalarOf(a[0])), C = a[1] == null ? 1 : toNum(scalarOf(a[1])), st = a[2] == null ? 1 : toNum(scalarOf(a[2])), sp = a[3] == null ? 1 : toNum(scalarOf(a[3]));
+    for (const x of [R, C, st, sp]) if (isE(x)) return x; if (R < 1 || C < 1 || R * C > 10000) return E('#VALUE!');
+    const rows = []; let v = st; for (let r = 0; r < R; r++) { const row = []; for (let c = 0; c < C; c++) { row.push(v); v += sp; } rows.push(row); } return new Arr(rows);
+  });
+  def('FILTER', a => {
+    const src = isA(a[0]) ? a[0] : new Arr([[a[0]]]), inc = isA(a[1]) ? a[1] : new Arr([[a[1]]]);
+    const byRow = inc.w === 1 && inc.h === src.h, byCol = inc.h === 1 && inc.w === src.w;
+    if (!byRow && !byCol) return E('#VALUE!'); const keep = cellsOf(inc).map(v => { const b = toBool(v); return isE(b) ? b : b; });
+    const bad = keep.find(isE); if (bad) return bad;
+    const rows = byRow ? src.rows.filter((_, i) => keep[i]) : src.rows.map(r => r.filter((_, i) => keep[i]));
+    if (!rows.length || !rows[0].length) return a[2] != null ? a[2] : E('#CALC!');
+    return new Arr(rows);
+  });
+  def('UNIQUE', a => {
+    const src = isA(a[0]) ? a[0] : new Arr([[a[0]]]), byCol = a[1] != null && toBool(scalarOf(a[1])) === true, once = a[2] != null && toBool(scalarOf(a[2])) === true;
+    const items = byCol ? src.rows[0].map((_, c) => src.rows.map(r => r[c])) : src.rows, key = it => JSON.stringify(it.map(v => typeof v === 'string' ? 's' + v.toLowerCase() : typeof v + str(v))), cnt = new Map();
+    items.forEach(it => cnt.set(key(it), (cnt.get(key(it)) || 0) + 1)); const seen = new Set(), out = [];
+    items.forEach(it => { const k = key(it); if (seen.has(k)) return; seen.add(k); if (!once || cnt.get(k) === 1) out.push(it); });
+    if (!out.length) return E('#CALC!'); return new Arr(byCol ? out[0].map((_, c) => out.map(it => it[c])) : out);
+  });
+  const sortRows = (src, keys, orders) => src.rows.map((r, i) => [r, i]).sort((x, y) => { for (let k = 0; k < keys.length; k++) { const d = cmp(keys[k][x[1]], keys[k][y[1]]) * orders[k]; if (d) return d; } return x[1] - y[1]; }).map(x => x[0]);
+  def('SORT', a => {
+    const src = isA(a[0]) ? a[0] : new Arr([[a[0]]]), idx = a[1] == null ? 1 : toNum(scalarOf(a[1])), ord = a[2] == null ? 1 : toNum(scalarOf(a[2])), byCol = a[3] != null && toBool(scalarOf(a[3])) === true;
+    if (isE(idx)) return idx; if (isE(ord)) return ord;
+    if (byCol) { const t = src.rows[0].map((_, c) => src.rows.map(r => r[c])); if (idx < 1 || idx > t[0].length) return E('#VALUE!'); const s = sortRows(new Arr(t), [t.map(r => r[idx - 1])], [ord < 0 ? -1 : 1]); return new Arr(s[0].map((_, c) => s.map(r => r[c]))); }
+    if (idx < 1 || idx > src.w) return E('#VALUE!'); return new Arr(sortRows(src, [src.rows.map(r => r[idx - 1])], [ord < 0 ? -1 : 1]));
+  });
+  def('SORTBY', a => { const src = isA(a[0]) ? a[0] : new Arr([[a[0]]]), keys = [], orders = []; for (let i = 1; i < a.length; i += 2) { keys.push(cellsOf(a[i])); orders.push(a[i + 1] != null && toNum(scalarOf(a[i + 1])) < 0 ? -1 : 1); } if (keys.some(k => k.length !== src.h)) return E('#VALUE!'); return new Arr(sortRows(src, keys, orders)); });
+  // text
+  const T1 = f => S(x => f(str(x)));
+  def('LEN', T1(s => s.length)); def('UPPER', T1(s => s.toUpperCase())); def('LOWER', T1(s => s.toLowerCase())); def('TRIM', T1(s => s.replace(/^ +| +$/g, '').replace(/ {2,}/g, ' ')));
+  def('PROPER', T1(s => s.toLowerCase().replace(/(^|[^A-Za-zÀ-ÿ])([A-Za-zÀ-ÿ])/g, (m, p, c) => p + c.toUpperCase()))); def('CLEAN', T1(s => s.replace(/[\u0000-\u001F]/g, '')));
+  def('LEFT', S((s, n) => { n = n === null || n === undefined ? 1 : toNum(n); return isE(n) ? n : n < 0 ? E('#VALUE!') : str(s).slice(0, Math.floor(n)); }));
+  def('RIGHT', S((s, n) => { n = n === null || n === undefined ? 1 : toNum(n); s = str(s); return isE(n) ? n : n < 0 ? E('#VALUE!') : Math.floor(n) === 0 ? '' : s.slice(-Math.floor(n)); }));
+  def('MID', S((s, st, n) => { st = toNum(st); n = toNum(n); if (isE(st)) return st; if (isE(n)) return n; return st < 1 || n < 0 ? E('#VALUE!') : str(s).substr(Math.floor(st) - 1, Math.floor(n)); }));
+  def('REPT', S((s, n) => { n = toNum(n); return isE(n) ? n : n < 0 || n * str(s).length > 32767 ? E('#VALUE!') : str(s).repeat(Math.floor(n)); }));
+  def('EXACT', S((x, y) => str(x) === str(y)));
+  def('VALUE', S(x => { if (typeof x === 'number') return x; const s = str(x).trim().replace(/[$,]/g, ''), pct = /%$/.test(s), n = Number(pct ? s.slice(0, -1) : s); return s !== '' && isFinite(n) ? (pct ? n / 100 : n) : E('#VALUE!'); }));
+  def('T', S(x => typeof x === 'string' ? x : '')); def('N', S(x => typeof x === 'number' ? x : typeof x === 'boolean' ? (x ? 1 : 0) : 0));
+  def('CHAR', N1(n => n < 1 || n > 255 ? E('#VALUE!') : String.fromCharCode(n))); def('CODE', T1(s => s.length ? s.charCodeAt(0) : E('#VALUE!')));
+  def('CONCAT', a => { const v = [].concat.apply([], a.map(cellsOf)); return firstErr(v) || v.map(str).join(''); });
+  def('CONCATENATE', a => { const v = a.map(scalarOf); return firstErr(v) || v.map(str).join(''); });
+  def('TEXTJOIN', a => { const d = str(scalarOf(a[0])), ig = toBool(scalarOf(a[1])); if (isE(ig)) return ig; let v = [].concat.apply([], a.slice(2).map(cellsOf)); const e = firstErr(v); if (e) return e; if (ig) v = v.filter(x => x !== null && x !== ''); return v.map(str).join(d); });
+  def('TEXT', S((v, f) => textFmt(v, f)));
+  def('FIND', S((f, s, st) => { st = st === null || st === undefined ? 1 : toNum(st); if (isE(st)) return st; const k = str(s).indexOf(str(f), st - 1); return st < 1 || k < 0 ? E('#VALUE!') : k + 1; }));
+  def('SEARCH', S((f, s, st) => { st = st === null || st === undefined ? 1 : toNum(st); if (isE(st)) return st; const re = new RegExp(str(f).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[\\s\\S]*').replace(/\?/g, '.'), 'i'), m = re.exec(str(s).slice(st - 1)); return st < 1 || !m ? E('#VALUE!') : m.index + st; }));
+  def('SUBSTITUTE', S((s, o, n, k) => { s = str(s); o = str(o); n = str(n); if (o === '') return s; if (k === null || k === undefined) return s.split(o).join(n); k = toNum(k); if (isE(k)) return k; let i = -1, c = 0; for (;;) { i = s.indexOf(o, i + 1); if (i < 0) return s; if (++c === k) return s.slice(0, i) + n + s.slice(i + o.length); } }));
+  def('REPLACE', S((s, st, n, t) => { st = toNum(st); n = toNum(n); if (isE(st)) return st; if (isE(n)) return n; return st < 1 || n < 0 ? E('#VALUE!') : str(s).slice(0, st - 1) + str(t) + str(s).slice(st - 1 + n); }));
+
+  // ---------------------------------------------------------------- evaluation
+  function evaluate(formula, grid) {
+    const src = String(formula === null || formula === undefined ? '' : formula).trim();
+    if (src[0] !== '=') return { error: 'A formula must start with =' };
+    if (src.length > 4000) return { error: 'The formula is too long' };
+    let ast; try { ast = parse(tokenize(src.slice(1))); } catch (e) { return { error: e.message }; }
+    const rowsN = grid.length, cell = (r, c) => { const row = grid[r], v = row ? row[c] : undefined; return v === undefined || v === '' ? null : v; };
+    function refVal(t) {
+      const r2 = t.r2 === -1 ? Math.max(0, rowsN - 1) : t.r2;
+      if (t.single) return cell(t.r1, t.c1);
+      const rows = [];
+      for (let r = Math.min(t.r1, r2); r <= Math.max(t.r1, r2); r++) { const row = []; for (let c = Math.min(t.c1, t.c2); c <= Math.max(t.c1, t.c2); c++) row.push(cell(r, c)); rows.push(row); }
+      return new Arr(rows);
+    }
+    const lookup = (env, n) => { for (let e = env; e; e = e.up) if (e.vars.has(n)) return e.vars.get(n); return undefined; };
+    function ev(n, env) {
+      switch (n.t) {
+        case 'num': case 'str': return n.v;
+        case 'err': return E(n.v);
+        case 'empty': return null;
+        case 'ref': return refVal(n);
+        case 'arr': return new Arr(n.rows);
+        case 'name': { const v = lookup(env, n.v); if (v !== undefined) return v; const c = ALIAS[n.v] || n.v; return c === 'TRUE' ? true : c === 'FALSE' ? false : E('#NAME? (' + n.v + ')'); }
+        case 'un': return lift([ev(n.a, env)], x => { const v = toNum(x); return isE(v) ? v : -v; });
+        case 'pct': return lift([ev(n.a, env)], x => { const v = toNum(x); return isE(v) ? v : v / 100; });
+        case 'bin': return binop(n.op, ev(n.a, env), ev(n.b, env));
+        case 'fn': return evalFn(n, env);
+      }
+      throw new Error('Unsupported formula');
+    }
+    function evalFn(n, env) {
+      const name = ALIAS[n.v] || n.v, a = n.args, lazy = i => a[i] === undefined ? undefined : ev(a[i], env);
+      switch (name) {
+        case 'IF': {
+          if (a.length < 1 || a.length > 3) return E('#VALUE!');
+          const c = ev(a[0], env);
+          if (isA(c)) { const t = a[1] ? ev(a[1], env) : true, f = a[2] ? ev(a[2], env) : false; return lift([c, t, f], (x, y, z) => { const b = toBool(x); return isE(b) ? b : b ? y : z; }); }
+          const b = toBool(c); if (isE(b)) return b; return b ? (a[1] ? ev(a[1], env) : true) : (a[2] ? ev(a[2], env) : false);
+        }
+        case 'IFS': { for (let i = 0; i + 1 < a.length; i += 2) { const b = toBool(scalarOf(ev(a[i], env))); if (isE(b)) return b; if (b) return ev(a[i + 1], env); } return E('#N/A'); }
+        case 'IFERROR': case 'IFNA': {
+          const v = ev(a[0], env), bad = x => isE(x) && (name === 'IFERROR' || x.code === '#N/A');
+          if (isA(v)) { if (!v.rows.some(r => r.some(bad))) return v; const alt = ev(a[1], env); return lift([v, alt], (x, y) => bad(x) ? y : x); }
+          return bad(v) ? (a[1] ? ev(a[1], env) : 0) : v;
+        }
+        case 'SWITCH': {
+          const x = scalarOf(ev(a[0], env)); if (isE(x)) return x; let i = 1;
+          for (; i + 1 < a.length; i += 2) if (looseEq(x, scalarOf(ev(a[i], env)))) return ev(a[i + 1], env);
+          return i < a.length ? ev(a[i], env) : E('#N/A');
+        }
+        case 'CHOOSE': { const k = toNum(scalarOf(ev(a[0], env))); if (isE(k)) return k; return k < 1 || k >= a.length ? E('#VALUE!') : ev(a[Math.floor(k)], env); }
+        case 'LET': {
+          if (a.length < 3 || a.length % 2 === 0) return E('#VALUE!');
+          const scope = { vars: new Map(), up: env };
+          for (let i = 0; i < a.length - 1; i += 2) { if (a[i].t !== 'name') return E('#NAME?'); scope.vars.set(a[i].v, ev(a[i + 1], scope)); }
+          return ev(a[a.length - 1], scope);
+        }
+      }
+      const f = F[name]; if (!f) return E('#NAME? (' + n.v + ')');
+      return f(a.map(x => ev(x, env)));
     }
     try {
-      const v = comparison();
-      if (p < toks.length) throw new Error('Unexpected "' + toks[p].v + '"');
-      if (v && v.range && !(v.range.length === 1 && v.range[0].length === 1)) return { error: 'The formula returns several cells; it must return one value' };
-      const s = scalar(v);
-      if (isE(s)) return { error: s.code };
-      return { value: typeof s === 'number' ? Number(s.toFixed(10)) : s === null ? 0 : s };
-    } catch (e) { return { error: e.message }; }
+      let v = ev(ast, null);
+      if (isA(v)) { if (v.h === 1 && v.w === 1) v = v.rows[0][0]; else return { error: 'The formula returns several cells; it must return one value' }; }
+      if (isE(v)) return { error: v.code };
+      return { value: typeof v === 'number' ? (isFinite(v) ? Number(v.toFixed(10)) : '#NUM!') : v === null || v === undefined ? 0 : v };
+    } catch (e) { return { error: e instanceof RangeError ? 'The formula is too complex' : e.message }; }
   }
-  return { evaluate };
+  const supported = () => Object.keys(F).concat(['IF', 'IFS', 'IFERROR', 'IFNA', 'SWITCH', 'CHOOSE', 'LET']).sort();
+  return { evaluate, supported, aliases: ALIAS };
 })();
 /*EXCEL-END*/
 
@@ -837,13 +1133,13 @@ $('#signoutBtn').onclick = () => logout();
 $('#forgotBtn').onclick = async () => {
   // the modal removes its fields when closed, so the values are captured while it is open
   const grab = (p, ids) => { const v = {}; ids.forEach(id => { const el = $('#' + id); v[id] = el ? el.value : ''; if (el) el.addEventListener('input', () => { v[id] = el.value; }); }); return v; };
-  const p1 = modal('<h3>Forgot your password?</h3><p class="muted" style="margin:0 0 6px">Enter your username. If it exists we email a 6-digit code to the address on file.</p><label for="fpU">Username</label><input id="fpU" type="text" autocapitalize="off" spellcheck="false" value="' + esc($('#lu').value.trim()) + '">',
+  const p1 = modal('<h3>Forgot your password?</h3><p class="muted" style="margin:0 0 6px">Enter your username or your email address. If the account exists we email a 6-digit code to the address on file.</p><label for="fpU">Username or email</label><input id="fpU" type="text" autocapitalize="off" spellcheck="false" value="' + esc($('#lu').value.trim()) + '">',
     [{ label: 'Cancel', value: null }, { label: 'Send code', value: 'ok', kind: 'primary' }]);
   const f1 = grab(null, ['fpU']);
   if (await p1 !== 'ok') return;
-  const user = f1.fpU.trim(); if (!user) return toast('Enter your username first.');
+  const user = f1.fpU.trim(); if (!user) return toast('Enter your username or email first.');
   try { await api.api_forgotStart(user); } catch (e) { return toast(e.message, 6000); }
-  const p2 = modal('<h3>Enter the code</h3><p class="muted" style="margin:0 0 6px">If the account exists, a code was sent to its email (check spam). It is valid for 15 minutes.</p>' +
+  const p2 = modal('<h3>Enter the code</h3><p class="muted" style="margin:0 0 6px">If the account exists, a code was sent to its email (check spam). It is valid for 15 minutes. If nothing arrives in a few minutes, ask HR to reset your password.</p>' +
     '<label for="fpC">6-digit code</label><input id="fpC" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8"><label for="fpP">New password</label><input id="fpP" type="password" autocomplete="new-password"><label for="fpP2">Repeat the new password</label><input id="fpP2" type="password" autocomplete="new-password"><div class="hint" style="margin-top:6px">At least 10 characters, with letters and numbers.</div>',
     [{ label: 'Cancel', value: null }, { label: 'Change password', value: 'ok', kind: 'primary' }]);
   const f2 = grab(null, ['fpC', 'fpP', 'fpP2']);
@@ -1112,7 +1408,7 @@ function renderQ() {
   if (q.type === 'pbi') bindPbi(q);
   if (q.type === 'xl') {
     const f = $('#xlIn');
-    const calc = () => { const a2 = ansOf(q.id); a2.output = XL.evaluate(f.value, S.sheet || []); a2.outFor = f.value; renderResult(q); };
+    const calc = () => { const a2 = ansOf(q.id); a2.output = XL.evaluate(f.value, S.sheet || []); a2.output.f = f.value; a2.outFor = f.value; renderResult(q); };   // the formula travels in the output too: if the stored answer is altered, the grader recovers it
     f.oninput = () => { setAns(q, f.value); calc(); };
     f.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); calc(); S.dirty.add(q.id); scheduleSave(); } };
     $('#xlBtn').onclick = () => { calc(); S.dirty.add(q.id); scheduleSave(); };
@@ -1612,6 +1908,7 @@ async function loadAdmin() {
 async function getMods() { if (!ADM.mods) ADM.mods = await api.api_adminModules(S.token); return ADM.mods; }
 async function renderAdmin() {
   const my = ++ADM.seq, live = () => my === ADM.seq;
+  ADM.tab = mrClampTab(S.role, ADM.tab);   // each role opens only its own tabs: a saved or deep-linked tab it may not open lands on its start page
   if (isProcRole()) ADM.tab = 'market';   // procurement sees Market Research only
   if ((ADM.tab === 'team' || ADM.tab === 'settings') && !isAdminRole()) ADM.tab = 'dash';   // HR does not manage settings or the team
   $$('#admTabs .tab').forEach(t => t.classList.toggle('on', t.dataset.tab === ADM.tab));
@@ -2307,12 +2604,15 @@ function srtOrdered(arr, root, attr, idOf) {
     '.src-conn{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}.src-conn .card h3{display:flex;gap:8px;align-items:center;justify-content:space-between}' +
     '.src-only{display:inline-flex;gap:6px;align-items:center;margin:0;font-weight:600;font-size:13px;cursor:pointer}.src-only input{width:auto;margin:0}.src-lk{border:0;background:none;color:var(--brand-2);text-decoration:underline;cursor:pointer;padding:0;font:inherit}.src-seen{font-size:11.5px;color:var(--muted);align-self:center;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     '.src-onlyrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 8px}.src-onlyrow:empty{display:none}' +
-    '.src-conn details{margin-top:10px}.src-conn ol{margin:6px 0 0 18px;padding:0;font-size:13.5px}.src-conn li{margin:3px 0}';
+    '.src-conn details{margin-top:10px}.src-conn ol{margin:6px 0 0 18px;padding:0;font-size:13.5px}.src-conn li{margin:3px 0}' +
+    '.src-also{display:flex;gap:6px 8px;align-items:center;flex-wrap:wrap;margin-top:8px}.src-also .l{font-size:12.5px;color:var(--muted)}.src-also select{width:auto;max-width:100%;padding:4px 8px;font-size:12.5px}.src-also .src-chips{margin-top:0}' +
+    '.src-cost{color:var(--muted);font-weight:400}.src-hint{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:0 0 8px;font-size:13px}' +
+    '.toast .src-tact{margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,.55);color:#fff;border-radius:8px;padding:3px 10px;font-size:13px;cursor:pointer}.toast .src-tact:hover{background:rgba(255,255,255,.16)}';
   document.head.appendChild(s);
 })();
 
 const SRC_KIND = { profiles: 'Profiles / CVs', jobs: 'Job boards', freelance: 'Freelance / hourly' };
-const SRC_MAX_LOCS = 8, SRC_MAX_QUERIES = 12;
+const SRC_MAX_LOCS = 8;
 const SRC_SINGLE_COL = '(max-width:1150px)';   /* the width under which the form and the results stack (the same number as the two @media rules of the style above) */
 const SRC_EUROPE = ['ES', 'DE', 'GB', 'IE', 'FR', 'IT', 'PT', 'GR', 'HR', 'ME', 'MT', 'TR', 'NO', 'DK', 'SE', 'EE', 'FI', 'NL', 'IS'], SRC_ASIA = ['PH', 'IN', 'SG', 'HK', 'JP', 'CN', 'TH', 'AU', 'NZ', 'AE', 'ZA', 'MU'];
 const SRC_LATAM = ['PA', 'CR', 'HN', 'GT', 'BZ', 'PE', 'EC', 'CL', 'AR', 'BR', 'UY', 'DO', 'PR'];
@@ -2357,7 +2657,9 @@ function srcAddCustom(text) {
   const have = SRC.tax.locations.find(x => x.key === key); if (have) return have;
   const city = label.split(',')[0].trim(), folded = city.normalize('NFD').replace(/[̀-ͯ]/g, ''), tail = srtNorm(label.split(',').slice(1).join(','));
   const kin = tail ? SRC.tax.locations.find(x => x.country && srtNorm(x.label).indexOf(tail) >= 0) : null;   // "Portimão, Portugal" -> country PT
-  const l = { key: key, label: label, group: 'My places', country: kin ? kin.country : '', variants: city === folded ? [city] : [city, folded], custom: true };
+  const parts = label.split(',').map(x => x.trim()).filter(Boolean), vars = city === folded ? [city] : [city, folded];
+  if (parts.length >= 3) vars.push(parts.slice(0, -1).join(', '));   // "Leticia, Amazonas, Colombia" is also written "Leticia, Amazonas" (the country is added to the query as its own term)
+  const l = { key: key, label: label, group: 'My places', country: kin ? kin.country : '', variants: vars, custom: true };
   SRC.tax.locations.push(l);
   try { const all = JSON.parse(localStorage.getItem(SRC_CUSTOM_KEY) || '[]') || []; all.push({ key: key, label: label, country: l.country, variants: l.variants }); localStorage.setItem(SRC_CUSTOM_KEY, JSON.stringify(all.slice(-100))); } catch (e) {}
   return l;
@@ -2379,49 +2681,6 @@ function srcFill(b, q, loc, cc) {
   const rep = (s, key, val) => s.replace(new RegExp('(.?.?.?)\\{' + key + '\\}', 'g'), (m, pre) => pre + (/[=+:]$/.test(pre) || /%22$|%3A$/i.test(pre) ? encodeURIComponent(val) : srcSlug(val)));
   return rep(rep(u, 'q', q), 'loc', loc || '');
 }
-const srcClean = s => String(s || '').replace(/^Certs?:\s*/i, '').replace(/\s*\([^)]*\)\s*/g, ' ').trim();
-const srcSkillLine = s => { s = srcClean(s); if (/,/.test(s) && !/\bOR\b/.test(s) && !/"/.test(s)) s = s.split(/\s*,\s*/).map(x => (/\s/.test(x) ? '"' + x + '"' : x)).join(' OR '); return s; };
-const srcPhrase = s => (/\s/.test(s) && !/[()"]/.test(s) ? '"' + s + '"' : s);
-const srcGroup = a => (a.length > 1 ? '(' + a.join(' OR ') + ')' : (a[0] || ''));
-const srcItem = (arr, key) => (arr || []).find(x => x.key === key);
-const srcWords = line => String(line || '').split(/\s+OR\s+/i).map(x => x.replace(/^[("\s]+|[)"\s]+$/g, '').trim()).filter(Boolean);
-
-/* titles, skills, filters -> the pieces every query and the scoring use */
-function srcPieces(st) {
-  const T = SRC.tax;
-  const titles = st.titles.split(/\s*(?:,|\n|;|\bOR\b)\s*/).map(s => s.trim().replace(/^"+|"+$/g, '')).filter(Boolean);
-  const skills = st.skills.split('\n').map(srcSkillLine).filter(Boolean);
-  const langs = st.langs.map(l => srcItem(T.languages, l.lang)).filter(Boolean);
-  const soft = [];
-  [['contract', T.contractTypes], ['mode', T.workModes], ['exp', T.experience], ['avail', T.availability]].forEach(([k, arr]) => { const it = srcItem(arr, st[k]); if (it && it.keywords) soft.push(...it.keywords.slice(0, 6)); });
-  st.langs.forEach(l => { const lv = srcItem(T.languageLevels, l.level); if (lv && lv.keywords) soft.push(...lv.keywords.slice(0, 4)); });
-  const locs = st.locs.map(k => srcItem(T.locations, k)).filter(l => l && l.key !== 'any' && !/^remote/.test(l.key));
-  return { titles, skills, langs, soft, locs, ex: st.exclude.split('\n').map(srcClean).filter(Boolean), remote: st.mode === 'remote' || st.locs.some(k => /^remote/.test(k)) };
-}
-function srcQuery(st, P, loc, src) {
-  const tg = srcGroup(P.titles.slice(0, 3).map(srcPhrase));
-  const sk = P.skills[0] ? srcGroup(srcWords(P.skills[0]).slice(0, 3).map(srcPhrase)) : '';
-  const lg = P.langs[0] ? srcGroup((P.langs[0].keywords || []).slice(0, 2).map(srcPhrase)) : '';
-  const lc = loc ? srcGroup(loc.variants.slice(0, 2).map(srcPhrase)) : '';
-  const ex = P.ex.slice(0, 3).map(x => '-' + srcPhrase(srcWords(x)[0] || x)).join(' ');
-  const build = parts => (src.site + ' ' + parts.filter(Boolean).join(' ')).trim();
-  let q = build([tg, lc, sk, lg, ex]);
-  if (q.length > 380) q = build([tg, lc, sk, ex]);
-  if (q.length > 380) q = build([tg, lc]);
-  return q;
-}
-function srcTerms(P) {
-  return { title: P.titles.slice(0, 10), skills: P.skills.slice(0, 6).map(srcWords).filter(g => g.length), loc: P.locs.flatMap(l => l.variants.slice(0, 5)), lang: P.langs.flatMap(l => (l.keywords || []).slice(0, 4)), soft: P.soft };
-}
-/* the Boolean string for tools that accept long searches (Recruiter, CV databases, job boards) */
-function srcBoolean(st, P) {
-  const parts = [], tg = srcGroup(P.titles.map(srcPhrase)); if (tg) parts.push(tg);
-  P.skills.forEach(s => parts.push(/\bOR\b/.test(s) && s[0] !== '(' ? '(' + s + ')' : s));
-  if (P.locs.length) parts.push(srcGroup(P.locs.flatMap(l => l.variants.slice(0, 2)).map(srcPhrase)));
-  P.langs.forEach(l => parts.push(srcGroup((l.keywords || []).slice(0, 5).map(srcPhrase))));
-  return parts.join(' AND ') + (P.ex.length ? ' NOT (' + P.ex.join(' OR ') + ')' : '');
-}
-
 /* first message, in Spanish or English, personalised with the prospect's first name and headline */
 function srcMessage(lang, p, st) {
   const a = SRC.areas.find(x => x.key === (p.area || st.area)), area = a ? (lang === 'en' ? a.en : a.es) : '';
@@ -2432,7 +2691,6 @@ function srcMessage(lang, p, st) {
   if (lang === 'en') return 'Subject: ' + (P.titles[0] || 'An opportunity') + ' at Global Cruises\n\nHi ' + first + ',\n\nI am {your name} from Global Cruises (shore excursions and a theme park for cruise passengers). I came across your profile' + (hook ? ' (' + hook + ')' : '') + ' and I think your experience fits an opening we have in ' + (area || 'our team') + where + '.\n\nWould you be open to a short call this week? If so, I will also send you a brief practical exercise so you can show how you work.\n\nThanks for your time,\n{your name}';
   return 'Asunto: ' + (P.titles[0] ? 'Oportunidad de ' + P.titles[0] : 'Una oportunidad') + ' en Global Cruises\n\nHola ' + first + ',\n\nSoy {tu nombre} de Global Cruises (excursiones en puerto y parque temático para pasajeros de cruceros). Vi tu perfil' + (hook ? ' (' + hook + ')' : '') + ' y creo que tu experiencia encaja con una vacante en ' + (area || 'nuestro equipo') + where + '.\n\n¿Te interesaría una llamada corta esta semana? Si es así, también te enviaré un ejercicio práctico breve para que nos muestres cómo trabajas.\n\nGracias por tu tiempo,\n{tu nombre}';
 }
-const srcPayload = (x, area) => ({ area, source: x.source, name: x.name, headline: x.headline, location: x.location, url: x.url, snippet: x.snippet, score: x.score, query: x.query, email: x.email || '', notes: x.phone ? 'Phone: ' + x.phone : '' });
 const srcCopy = async (text, ok) => { try { await navigator.clipboard.writeText(text); toast(ok || 'Copied'); } catch (e) { toast('Could not copy: select the text and press Ctrl+C'); } };
 const srcFirstLine = s => String(s || '').split('\n')[0].replace(/^(Subject|Asunto):\s*/i, '');
 
@@ -2554,7 +2812,7 @@ function srcResultRowHtml(r, i, o) {
   o = o || {}; const u = srcSafeUrl(r.url), nm = srcNameOf(r);
   return '<li class="src-r" data-ri="' + i + '"><input type="checkbox" class="src-ck" data-c="' + i + '"' + (o.checked ? ' checked' : '') + ' aria-label="Select ' + esc(nm) + '">' +
     '<div class="src-sc">' + srcScoreHtml(r.score) + '</div>' +
-    '<div class="src-main"><div class="src-nm"><b>' + esc(nm) + '</b>' + (o.saved ? ' <span class="chip ok">saved</span>' : '') + '</div>' + (r.headline ? '<div class="src-hl" title="' + esc(r.headline) + '">' + esc(r.headline) + '</div>' : '') +
+    '<div class="src-main"><div class="src-nm"><b>' + esc(nm) + '</b>' + (o.saved ? ' <span class="chip ok">saved</span>' : '') + (r._new ? ' <span class="chip on" title="Found by the last Find more round">new</span>' : '') + '</div>' + (r.headline ? '<div class="src-hl" title="' + esc(r.headline) + '">' + esc(r.headline) + '</div>' : '') +
     '<div class="src-meta">' + srcPlaceMetaHtml(r) + (r.sourceLabel ? '<span class="chip">' + esc(r.sourceLabel) + '</span>' : '') + srcSearchedHintHtml(r) + '</div></div>' +
     '<div class="src-ra">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Open ↗</a>' : '') + '<button class="btn sm primary" data-m="' + i + '">Message</button><button class="btn sm ghost" data-bl="' + i + '" title="Do not contact: hide this person everywhere" aria-label="Do not contact ' + esc(nm) + '">⊘</button></div></li>';
 }
@@ -2646,8 +2904,8 @@ function srcConnCardHtml(c, admin) {
 /*SRCX-PURE-START*/
 /* ====================================================================
  *  Sourcing, round 3 (no DOM; tools/ai-search-ui.test.js runs it): the place of each person, the "Only this place" filter, the query objects, the sources, Excel sheets.
- *  A result is {name, headline, location (where the PROFILE says the person is, '' when it does not say), loc (the place that was searched), loc_match 'yes'|'no'|'unknown',
- *  source, sourceLabel, url, snippet, score, query, engine, found_ms}. loc_match 'no' = the profile says another place: flagged, its score is already lower, and by default it is not listed.
+ *  A result is {name, headline, location (where the PROFILE says the person is, '' when it does not say), loc (the place that was searched), loc_match 'yes'|'country'|'no'|'unknown',
+ *  source, sourceLabel, url, snippet, score, query, engine, found_ms}. loc_match 'no' = the profile says another place, 'country' = the same country but not the searched place: both are flagged, their score is already lower, and by default neither is listed (one switch).
  * ==================================================================== */
 /* sources of profiles for the search (site: queries); the server keeps only real profile pages of each site. The old open-web (CV files) source no longer exists. */
 const SRC_SOURCES = [
@@ -2669,14 +2927,17 @@ const srcFromDir = d => ({ name: d.person || d.org, headline: [d.type, d.person 
   url: d.web || d.linkedin || d.source_url || '', source: 'directory', sourceLabel: 'Directory', snippet: [d.phone, d.email].filter(Boolean).join(' · '), score: d.score, query: 'directory', loc: d.port, loc_match: 'yes', found_ms: 0,
   email: d.email, phone: d.phone, org: d.org, role: d.role, type: d.type, web: d.web, linkedin: d.linkedin, address: d.address, directory: true });
 /* ---- the place of a person ---- */
-function srcLocMatch(r) { const m = r && r.loc_match; return m === 'yes' || m === 'no' ? m : 'unknown'; }
-function srcOtherCount(list) { return (list || []).reduce((n, r) => n + (srcLocMatch(r) === 'no' ? 1 : 0), 0); }
-function srcPlaceFilter(list, only) { return only ? (list || []).filter(r => srcLocMatch(r) !== 'no') : (list || []); }
-/* the chips under the headline: where the person lives (muted text when the profile does not say), a small "Other place" chip */
+function srcLocMatch(r) { const m = r && r.loc_match; return m === 'yes' || m === 'no' || m === 'country' ? m : 'unknown'; }   /* (an old server never sends 'country') */
+/* not the searched place: another place or country ('no') or the same country only ('country'); what "Only this place" hides */
+function srcIsOtherPlace(r) { const m = srcLocMatch(r); return m === 'no' || m === 'country'; }
+function srcOtherCount(list) { return (list || []).reduce((n, r) => n + (srcIsOtherPlace(r) ? 1 : 0), 0); }
+function srcPlaceFilter(list, only) { return only ? (list || []).filter(r => !srcIsOtherPlace(r)) : (list || []); }
+/* the chips under the headline: where the person lives (muted text when the profile does not say), a small "Other place" / "Same country" chip */
 function srcPlaceMetaHtml(r) {
   r = r || {}; const loc = String(r.location || '').replace(/\s+/g, ' ').trim(), m = srcLocMatch(r), searched = String(r.loc || '').replace(/\s+/g, ' ').trim();
   let h = loc ? '<span class="chip' + (m === 'no' ? ' warn' : '') + '" title="' + esc('Where the profile says this person is: ' + loc) + '">' + esc(loc) + '</span>' : '<span class="chip muted" title="The profile text does not say where this person is">Location not shown</span>';
   if (m === 'no') h += '<span class="chip warn" title="' + esc('The profile is not in the place you searched' + (searched ? ' (' + searched + ')' : '') + '; its score is lower') + '">Other place</span>';
+  else if (m === 'country') h += '<span class="chip muted" title="Lives in the same country but not in the searched place">Same country</span>';
   return h;
 }
 /* the searched place as a quiet hint (not for the directory, whose place IS the port) */
@@ -2698,9 +2959,13 @@ function srcLocVariants(l) {
   (l.variants || []).forEach(add); add(srcLocName(l));
   return out.slice(0, 8);
 }
-function srcQueryObj(q, key, loc) { return { q: q, source: key, loc: loc ? srcLocName(loc) : 'Worldwide', variants: srcLocVariants(loc), country: loc ? String(loc.country || '') : '' }; }
+/* intent (optional): {titles, place, country, langs, skills, exclude} for the plain-language prompt of the server; q stays for the Boolean, Brave and Google paths */
+function srcQueryObj(q, key, loc, intent) {
+  const o = { q: q, source: key, loc: loc ? srcLocName(loc) : 'Worldwide', variants: srcLocVariants(loc), country: loc ? String(loc.country || '') : '' };
+  if (intent) o.intent = intent; return o;
+}
 /* ---- Excel sheets (sheets for xlsxBuild; empty columns are dropped there) ---- */
-const SRC_MATCH_TEXT = { yes: 'Same place', no: 'Other place', unknown: 'Not known' };
+const SRC_MATCH_TEXT = { yes: 'Same place', country: 'Same country only', no: 'Other place', unknown: 'Not known' };
 const SRC_XL_RESULT_COLS = [
   { key: 'score', header: 'Score', type: 'number', fmt: 'int' }, { key: 'match', header: 'Matches searched place' }, { key: 'name', header: 'Name', width: 28 }, { key: 'headline', header: 'Headline', width: 44 },
   { key: 'location', header: 'Location (from the profile)', width: 28 }, { key: 'searched', header: 'Searched place', width: 22 }, { key: 'source', header: 'Source' }, { key: 'sourceId', header: 'Source id' },
@@ -2725,8 +2990,14 @@ function srcInfoSheet(info) {
   add('Search', 'Date', d); add('Search', 'Area of interest', info.area); add('Search', 'Job titles', info.titles); add('Search', 'Required skills', info.skills); add('Search', 'Exclude', info.exclude); add('Search', 'Languages', info.languages);
   add('Search', 'Preferences', info.preferences); add('Search', 'Places', (info.places || []).join('; ') || 'Worldwide'); add('Search', 'Sources', (info.sources || []).join('; ')); add('Search', 'Engine', info.via || info.engine); add('Search', 'Minimum score', info.minScore);
   (info.queries || []).forEach((q, i) => add('Query ' + (i + 1), [q.loc, q.source].filter(Boolean).join(' · '), q.q));
+  /* "Find more profiles": every round is noted (its searches, what it added and its queries) */
+  const rounds = Array.isArray(info.rounds) ? info.rounds : [];
+  if (rounds.length) {
+    add('Search', 'Rounds', (rounds.length + 1) + ' (the first search + ' + rounds.length + ' "Find more profiles")');
+    rounds.forEach(r => { add('Round ' + r.round, 'Searches used', r.used); add('Round ' + r.round, 'New profiles', r.added); (r.queries || []).forEach((q, i) => add('Round ' + r.round, [q.loc, q.source].filter(Boolean).join(' · ') || 'Query ' + (i + 1), q.q)); });
+  }
   const c = info.counts || {};
-  [['loaded', 'Results loaded'], ['shown', 'Shown in the list'], ['otherPlace', 'Flagged as another place'], ['hiddenOther', 'Hidden from other places'], ['hiddenLow', 'Weak matches hidden by the server'], ['hiddenNoTitle', 'Not matching any job title (not shown)'], ['directory', 'Directory contacts']].forEach(x => { if (c[x[0]] !== undefined && c[x[0]] !== null) add('Counts', x[1], c[x[0]]); });
+  [['loaded', 'Results loaded'], ['shown', 'Shown in the list'], ['otherPlace', 'Flagged as another place or only the same country'], ['sameCountry', 'Of those, same country only'], ['hiddenOther', 'Hidden from other places'], ['hiddenLow', 'Weak matches hidden by the server'], ['hiddenNoTitle', 'Not matching any job title (not shown)'], ['directory', 'Directory contacts']].forEach(x => { if (c[x[0]] !== undefined && c[x[0]] !== null) add('Counts', x[1], c[x[0]]); });
   const f = info.filters || {};
   add('Filters', 'Only this place', f.onlyPlace === undefined ? '' : f.onlyPlace ? 'on' : 'off'); add('Filters', 'Search text', f.text); add('Filters', 'Place filter', f.place); add('Filters', 'Sorted by', f.sort); add('Filters', 'Top shown', f.top);
   add('Export', 'Contents', 'All loaded results (also those hidden by the filters), in the order of the list');
@@ -2746,6 +3017,320 @@ function srcDirectorySheet(rows) {
   rows: (rows || []).map(r => ({ port: r.port, type: r.type, org: r.org, person: r.person, role: r.role, phone: r.phone, email: r.email, web: r.web, linkedin: r.linkedin, address: r.address, source_url: r.source_url, score: Number(r.score) > 0 ? Number(r.score) : '' })) };
 }
 /*SRCX-PURE-END*/
+/*SRCQ-PURE-START*/
+/* ====================================================================
+ *  Sourcing, round 4 (no DOM; tools/ai-search-ui.test.js runs this block as written here, with SRC and srtNorm of the page):
+ *    - the query: the place is ALWAYS quoted and followed by the country name ("Leticia" Colombia), never a bare place word (a bare "leticia" matches people called Leticia);
+ *    - the intent object each query carries (the server writes a plain-language request from it; q stays for the Boolean, Brave and Google paths);
+ *    - several areas at once (the primary area + up to 3 more), titles taken round-robin;
+ *    - "Find more profiles": rounds 2 and 3 use other phrasing, skip the URLs already listed, and are merged into the list.
+ * ==================================================================== */
+const srcClean = s => String(s || '').replace(/^Certs?:\s*/i, '').replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+const srcSkillLine = s => { s = srcClean(s); if (/,/.test(s) && !/\bOR\b/.test(s) && !/"/.test(s)) s = s.split(/\s*,\s*/).map(x => (/\s/.test(x) ? '"' + x + '"' : x)).join(' OR '); return s; };
+const srcPhrase = s => (/\s/.test(s) && !/[()"]/.test(s) ? '"' + s + '"' : s);
+const srcQuote = s => { const t = String(s == null ? '' : s).replace(/["()<>|\\]/g, ' ').replace(/\s+/g, ' ').trim(); return t ? '"' + t + '"' : ''; };   // always quoted (also one word)
+const srcGroup = a => (a.length > 1 ? '(' + a.join(' OR ') + ')' : (a[0] || ''));
+const srcItem = (arr, key) => (arr || []).find(x => x.key === key);
+const srcWords = line => String(line || '').split(/\s+OR\s+/i).map(x => x.replace(/^[("\s]+|[)"\s]+$/g, '').trim()).filter(Boolean);
+const srcFold = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const SRC_MAX_AREAS = 4, SRC_MAX_ROUNDS = 3, SRC_EXCLUDE_MAX = 60, SRC_MAX_QUERIES = 12;
+/* the country name (English) of every country code of the place catalogue: the query says "Leticia" Colombia, not only the place */
+const SRC_COUNTRY_NAMES = { CO: 'Colombia', MX: 'Mexico', PA: 'Panama', CR: 'Costa Rica', HN: 'Honduras', GT: 'Guatemala', BZ: 'Belize', PE: 'Peru', EC: 'Ecuador', CL: 'Chile', AR: 'Argentina', BR: 'Brazil', UY: 'Uruguay', DO: 'Dominican Republic', PR: 'Puerto Rico',
+  BS: 'Bahamas', JM: 'Jamaica', KY: 'Cayman Islands', VI: 'US Virgin Islands', SX: 'Sint Maarten', AW: 'Aruba', CW: 'Curacao', BB: 'Barbados', LC: 'Saint Lucia', AG: 'Antigua and Barbuda', KN: 'Saint Kitts and Nevis', TC: 'Turks and Caicos',
+  US: 'United States', ES: 'Spain', PH: 'Philippines', IN: 'India', CA: 'Canada', DE: 'Germany', GB: 'United Kingdom', IE: 'Ireland', FR: 'France', IT: 'Italy', PT: 'Portugal', GR: 'Greece', HR: 'Croatia', ME: 'Montenegro', MT: 'Malta', TR: 'Turkey',
+  NO: 'Norway', DK: 'Denmark', SE: 'Sweden', EE: 'Estonia', FI: 'Finland', NL: 'Netherlands', IS: 'Iceland', SG: 'Singapore', HK: 'Hong Kong', JP: 'Japan', TH: 'Thailand', AU: 'Australia', NZ: 'New Zealand', AE: 'United Arab Emirates', ZA: 'South Africa', MU: 'Mauritius' };
+/* the country NAME of a place: a catalogue place maps its ISO code; a place typed by hand uses the text after the last comma of its label ("Leticia, Colombia" -> Colombia), else its code */
+function srcCountryName(l) {
+  if (!l) return '';
+  if (l.custom) {
+    const parts = String(l.label || '').split(','), t = parts.length > 1 ? parts[parts.length - 1].replace(/\([^)]*\)/g, ' ').replace(/["<>|\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    if (t) return t;
+  }
+  return SRC_COUNTRY_NAMES[String(l.country || '').toUpperCase()] || '';
+}
+/* the variants of a place as quoted phrases, plus the country name as its own term when no variant already holds it:  ("Leticia" OR "Leticia, Amazonas") Colombia  /  "Leticia" Colombia */
+function srcPlaceParts(l, n) {
+  if (!l) return { variants: [], country: '' };
+  const clean = v => String(v || '').replace(/["()<>|\\]/g, ' ').replace(/\s+/g, ' ').trim(), seen = {}, vs = [];
+  (Array.isArray(l.variants) && l.variants.length ? l.variants : [String(l.label || '').replace(/\s*\(.*?\)/g, '').split(',')[0]]).forEach(v => { v = clean(v); const k = srcFold(v); if (v && !seen[k]) { seen[k] = 1; vs.push(v); } });
+  let country = clean(srcCountryName(l)); const cf = srcFold(country);
+  if (cf && vs.slice(0, n || 2).some(v => (' ' + srcFold(v) + ' ').indexOf(' ' + cf + ' ') >= 0)) country = '';   // a variant that is IN the query already says it ("Colombia", "Cartagena, Colombia")
+  return { variants: vs, country: country };
+}
+function srcPlaceBlock(l, n) {
+  const p = srcPlaceParts(l, n); if (!p.variants.length) return '';
+  const v = p.variants.slice(0, n || 2).map(srcQuote).filter(Boolean);
+  return (srcGroup(v) + (p.country ? ' ' + srcPhrase(p.country) : '')).trim();
+}
+/* ---- areas: the primary one (st.area) plus up to 3 more (st.areas), and the lines each extra area added to the titles / skills boxes (st.added) ---- */
+function srcAreaKeys(st) {
+  const out = [], ok = k => typeof k === 'string' && SRC.areas.some(a => a.key === k);
+  [st && st.area].concat(st && Array.isArray(st.areas) ? st.areas : []).forEach(k => { if (ok(k) && out.indexOf(k) < 0 && out.length < SRC_MAX_AREAS) out.push(k); });
+  return out;
+}
+const srcAreaOf = k => SRC.areas.find(a => a.key === k);
+function srcAreaTitles(a, qlang) { return qlang === 'es' ? a.ts.slice(0, 4) : qlang === 'en' ? a.te.slice(0, 4) : a.ts.slice(0, 3).concat(a.te.slice(0, 3)); }
+const srcTitleList = text => String(text || '').split(/\s*(?:,|\n|;|\bOR\b)\s*/).map(s => s.trim().replace(/^"+|"+$/g, '')).filter(Boolean);
+const srcLineList = text => String(text || '').split('\n').map(s => s.trim()).filter(Boolean);
+/* old or odd saved state: only real, different, non-primary areas stay (at most SRC_MAX_AREAS in all) and "added" only knows them */
+function srcNormAreas(st) {
+  const keys = srcAreaKeys(st); st.areas = keys.slice(1);
+  const old = st.added && typeof st.added === 'object' ? st.added : {}, added = {};
+  st.areas.forEach(k => { const o = old[k]; added[k] = { titles: o && Array.isArray(o.titles) ? o.titles.filter(x => typeof x === 'string') : [], skills: o && Array.isArray(o.skills) ? o.skills.filter(x => typeof x === 'string') : [] }; });
+  st.added = added; return st;
+}
+/* adds the default titles and required-skill lines of an area to the boxes (no duplicates) and remembers exactly what it added */
+function srcAddArea(st, a) {
+  srcNormAreas(st); if (!a || srcAreaKeys(st).indexOf(a.key) >= 0 || srcAreaKeys(st).length >= SRC_MAX_AREAS) return false;
+  const titles = srcTitleList(st.titles), have = new Set(titles.map(srcFold)), nt = [];
+  srcAreaTitles(a, st.qlang).forEach(t => { if (!have.has(srcFold(t))) { have.add(srcFold(t)); nt.push(t); } });
+  const lines = srcLineList(st.skills), haveL = new Set(lines.map(srcFold)), ns = [];
+  a.ms.slice(0, 3).forEach(s => { if (!haveL.has(srcFold(s))) { haveL.add(srcFold(s)); ns.push(s); } });
+  st.titles = titles.concat(nt).join(', '); st.skills = lines.concat(ns).join('\n');
+  st.areas.push(a.key); st.added[a.key] = { titles: nt, skills: ns }; return true;
+}
+/* removes the area chip and ONLY the lines that came from it and are still there (what the person edited away or typed is untouched) */
+function srcRemoveArea(st, key) {
+  srcNormAreas(st); const i = st.areas.indexOf(key); if (i < 0) return false;
+  const add = st.added[key] || { titles: [], skills: [] }, dropT = new Set(add.titles.map(srcFold)), dropS = new Set(add.skills.map(srcFold));
+  st.titles = srcTitleList(st.titles).filter(t => !dropT.has(srcFold(t))).join(', '); st.skills = srcLineList(st.skills).filter(s => !dropS.has(srcFold(s))).join('\n');
+  st.areas.splice(i, 1); delete st.added[key]; return true;
+}
+/* "Also search:" row: the removable chips and the small select that adds an area (hidden once SRC_MAX_AREAS areas are chosen) */
+function srcAlsoHtml(st, areas, max) {
+  max = max || SRC_MAX_AREAS; const keys = srcAreaKeys(st), extra = keys.slice(1), name = k => { const a = (areas || []).find(x => x.key === k); return a ? a.en : k; };
+  const chips = extra.map(k => '<span class="chip on">' + esc(name(k)) + '<button type="button" data-ax="' + esc(k) + '" aria-label="Remove ' + esc(name(k)) + '">✕</button></span>').join('');
+  const left = (areas || []).filter(a => keys.indexOf(a.key) < 0);
+  const sel = keys.length >= max ? '<span class="hint" id="sAlsoMax" tabindex="-1">Up to ' + max + ' areas</span>' : '<select id="sAlsoAdd" aria-label="Choose another area to add"><option value="">Choose an area…</option>' + left.map(a => '<option value="' + esc(a.key) + '">' + esc(a.en) + '</option>').join('') + '</select><button type="button" class="btn sm" id="sAlsoBtn" title="Search this area too">Add area</button>';   /* a closed <select> that acts on change adds an area on every arrow key: the area is added by the button */
+  return '<span class="l">Also search:</span>' + (chips ? '<span class="src-chips" id="sAlso">' + chips + '</span>' : '') + sel;
+}
+/* the other areas, by name, for the notes of a saved prospect */
+function srcAlsoNames(st) { return srcAreaKeys(st).slice(1).map(k => (srcAreaOf(k) || {}).en).filter(Boolean); }
+/* the titles in round-robin order across the chosen areas (a title the person typed comes first); one area keeps the order of the box */
+function srcRoundRobin(titles, areas) {
+  if (!areas || areas.length < 2) return titles.slice();
+  const sets = areas.map(a => new Set(a.te.concat(a.ts).map(srcFold))), groups = [[]].concat(areas.map(() => []));
+  titles.forEach(t => { const i = sets.findIndex(s => s.has(srcFold(t))); groups[i < 0 ? 0 : i + 1].push(t); });
+  const out = []; for (let n = 0; out.length < titles.length; n++) groups.forEach(g => { if (n < g.length) out.push(g[n]); });
+  return out;
+}
+/* titles, skills, filters -> the pieces every query and the scoring use */
+function srcPieces(st) {
+  const T = SRC.tax, areas = srcAreaKeys(st).map(srcAreaOf).filter(Boolean);
+  const titles = srcTitleList(st.titles);
+  const skills = st.skills.split('\n').map(srcSkillLine).filter(Boolean);
+  const langs = st.langs.map(l => srcItem(T.languages, l.lang)).filter(Boolean);
+  const soft = [];
+  [['contract', T.contractTypes], ['mode', T.workModes], ['exp', T.experience], ['avail', T.availability]].forEach(([k, arr]) => { const it = srcItem(arr, st[k]); if (it && it.keywords) soft.push(...it.keywords.slice(0, 6)); });
+  st.langs.forEach(l => { const lv = srcItem(T.languageLevels, l.level); if (lv && lv.keywords) soft.push(...lv.keywords.slice(0, 4)); });
+  const locs = st.locs.map(k => srcItem(T.locations, k)).filter(l => l && l.key !== 'any' && !/^remote/.test(l.key));
+  const rr = srcRoundRobin(titles, areas), used = new Set(rr.map(srcFold)), syn = [];
+  areas.forEach(a => a.te.concat(a.ts).forEach(t => { if (!used.has(srcFold(t))) { used.add(srcFold(t)); syn.push(t); } }));
+  return { titles, titlesRR: rr, areas, nq: areas.length > 1 ? 5 : 3, syn, skills, langs, soft, locs, ex: st.exclude.split('\n').map(srcClean).filter(Boolean), remote: st.mode === 'remote' || st.locs.some(k => /^remote/.test(k)) };
+}
+/* round 2: the titles after the ones round 1 used (or, with none left, other titles of the areas, last first); round 3: the generic role words */
+const SRC_STOP = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'y', 'e', 'and', 'of', 'the', 'for', 'para', 'con', 'en', 'in', 'a', 'bilingue', 'bilingual', 'professional', 'profesional', 'senior', 'junior', 'lead', 'jefe']);
+function srcRoundTitles(P, round) {
+  const all = P.titlesRR || P.titles, n = P.nq || 3;
+  if (round === 2) { const rest = all.slice(n, 8); if (rest.length) return rest.slice(0, n); const syn = (P.syn || []).slice().reverse(); return (syn.length ? syn : all.slice().reverse()).slice(0, n); }
+  return all.slice(0, n);
+}
+function srcGenericWords(P, n) {
+  const count = {}, order = [];
+  (P.titlesRR || P.titles).slice(0, 8).concat((P.syn || []).slice(0, 6)).forEach(t => srcFold(t).split(/[^a-z0-9]+/).forEach(w => { if (w.length < 3 || SRC_STOP.has(w)) return; if (!(w in count)) { count[w] = 0; order.push(w); } count[w]++; }));
+  return order.map((w, i) => ({ w: w, c: count[w], i: i })).sort((a, b) => b.c - a.c || a.i - b.i).slice(0, n || 3).map(x => x.w);
+}
+function srcQuery(st, P, loc, src, round) {
+  round = round === 2 || round === 3 ? round : 1;
+  const lc = loc ? srcPlaceBlock(loc, 2) : '', lg = P.langs[0] ? srcGroup((P.langs[0].keywords || []).slice(0, round === 3 ? 3 : 2).map(srcPhrase)) : '';
+  const ex = P.ex.slice(0, 3).map(x => '-' + srcPhrase(srcWords(x)[0] || x)).join(' ');
+  const build = parts => (src.site + ' ' + parts.filter(Boolean).join(' ')).trim();
+  if (round === 3) return build([srcGroup(srcGenericWords(P, 3).map(srcPhrase)), lc, lg]);
+  const tg = srcGroup((round === 2 ? srcRoundTitles(P, 2) : (P.titlesRR || P.titles).slice(0, P.nq || 3)).map(srcPhrase));
+  const sk = round === 1 && P.skills[0] && !(P.areas && P.areas.length > 1) ? srcGroup(srcWords(P.skills[0]).slice(0, 3).map(srcPhrase)) : '';   // several areas: a skill of the first area would leave out the people of the other areas
+  let q = build([tg, lc, sk, lg, ex]);
+  if (q.length > 380) q = build([tg, lc, sk, ex]);
+  if (q.length > 380) q = build([tg, lc]);
+  return q;
+}
+/* what the server needs to write a plain-language request: titles (up to 8), place, country, language names, skills (first term of up to 6), exclusions (up to 6) */
+function srcIntent(st, P, loc, round) {
+  round = round === 2 || round === 3 ? round : 1; const cut = s => String(s || '').replace(/["()<>|\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60), list = (a, n) => a.map(cut).filter(Boolean).slice(0, n);
+  const plain = s => { const t = srcWords(s)[0] || ''; return t && !/[:\/]/.test(t) && t.split(/\s+/).length <= 4 ? t : ''; };   // a skill or an exclusion is a short term: a description ("English conversational fluent - spoken", "tour manager music/concert") is no guidance for the model
+  const titles = round === 2 ? srcRoundTitles(P, 2) : (P.titlesRR || P.titles);   // round 3 searches generic words, but the request still names the real job titles (tour / guide are not roles)
+  const full = loc ? srcLocName(loc).split(',')[0].trim() : '', cn = loc ? (srcPlaceParts(loc).country || srcCountryName(loc)) : '';
+  return { titles: list(titles, 8), place: cut(full), country: srcFold(cn) === srcFold(full) ? '' : cut(cn), langs: list(P.langs.map(l => l.en), 6),
+    skills: round === 1 ? list(P.skills.map(plain), 6) : [], exclude: list(P.ex.map(plain), 6) };
+}
+function srcTerms(P, extra) {
+  const title = (P.titlesRR || P.titles).slice(0, 10), seen = new Set(title.map(srcFold));
+  (extra || []).forEach(t => { const k = srcFold(t); if (k && !seen.has(k) && title.length < 12) { seen.add(k); title.push(String(t)); } });   // a round may search titles that are not in the box: the server drops a profile that matches none of the title terms
+  return { title: title, skills: P.skills.slice(0, 6).map(srcWords).filter(g => g.length), loc: P.locs.flatMap(l => l.variants.slice(0, 5)), lang: P.langs.flatMap(l => (l.keywords || []).slice(0, 4)), soft: P.soft };
+}
+/* the Boolean string for tools that accept long searches (Recruiter, CV databases, job boards) */
+function srcBoolean(st, P) {
+  const parts = [], tg = srcGroup((P.titlesRR || P.titles).map(srcPhrase)); if (tg) parts.push(tg);
+  const wrapS = s => (/\bOR\b/.test(s) && s[0] !== '(' ? '(' + s + ')' : s);
+  if (P.areas && P.areas.length > 1) { if (P.skills.length) parts.push(P.skills.length > 1 ? '(' + P.skills.map(wrapS).join(' OR ') + ')' : wrapS(P.skills[0])); }   // several areas: the skills of different jobs are alternatives (OR); ANDing them matches nobody
+  else P.skills.forEach(s => parts.push(wrapS(s)));
+  if (P.locs.length) {
+    const vs = [], cs = []; P.locs.forEach(l => { const p = srcPlaceParts(l); p.variants.slice(0, 2).forEach(v => { if (vs.indexOf(v) < 0) vs.push(v); }); if (p.country && cs.indexOf(p.country) < 0) cs.push(p.country); });
+    parts.push(srcGroup(vs.map(srcQuote)) + (cs.length ? ' ' + srcGroup(cs.map(srcPhrase)) : ''));
+  }
+  P.langs.forEach(l => parts.push(srcGroup((l.keywords || []).slice(0, 5).map(srcPhrase))));
+  return parts.join(' AND ') + (P.ex.length ? ' NOT (' + P.ex.join(' OR ') + ')' : '');
+}
+/* the prospect that is saved to the pipeline: the primary area, and the other areas of the search in the notes (the notes field is capped at 500 by the server) */
+const srcPayload = (x, area, also) => ({ area, source: x.source, name: x.name, headline: x.headline, location: x.location, url: x.url, snippet: x.snippet, score: x.score, query: x.query, email: x.email || '',
+  notes: [x.phone ? 'Phone: ' + x.phone : '', also && also.length ? 'Also searched: ' + also.join(', ') : ''].filter(Boolean).join(' · ').slice(0, 500) });
+/* ---- Find more profiles ---- */
+/* the form as it was when a search ran (a round of "Find more profiles" rebuilds its queries from it, whatever the form says by then) */
+function srcSnapState(st) {
+  return JSON.parse(JSON.stringify({ area: st.area, areas: st.areas || [], added: st.added || {}, qlang: st.qlang, titles: st.titles, skills: st.skills, exclude: st.exclude, langs: st.langs || [], contract: st.contract, mode: st.mode, exp: st.exp, avail: st.avail, locs: st.locs || [] }));
+}
+/* the key of a profile: the link without protocol, www, ?query, #hash, trailing slash and the language suffix of a LinkedIn profile; people without a link use their email, else name + place */
+function srcResultKey(r) {
+  r = r || {}; let u = String(r.url || '').trim().toLowerCase();
+  if (u) { u = u.replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/^www\./, '').replace(/[?#].*$/, '').replace(/\/+$/, ''); u = u.replace(/^(([a-z]{2,3}\.)?linkedin\.com\/in\/[^/]+)\/[a-z]{2}(-[a-z]{2})?$/, '$1'); return u.replace(/^[a-z]{2,3}\.linkedin\.com/, 'linkedin.com'); }
+  return r.email ? 'mailto:' + String(r.email).toLowerCase() : 'name:' + srcFold(r.name) + '|' + srcFold(r.loc);
+}
+/* the https profile links of the list for "exclude": newest first (found time, then the order they were merged), no repeats, at most 60 */
+function srcExcludeUrls(list, max) {
+  max = max || SRC_EXCLUDE_MAX; const seen = new Set(), out = [];
+  (list || []).map((r, i) => ({ r: r, i: i })).filter(x => x.r && !x.r.directory && /^https:\/\/[^\s"<>]+$/.test(String(x.r.url || '')))
+    .sort((a, b) => (Number(b.r.found_ms) || 0) - (Number(a.r.found_ms) || 0) || (Number(b.r._n) || 0) - (Number(a.r._n) || 0) || b.i - a.i)
+    .forEach(x => { const k = srcResultKey(x.r); if (!seen.has(k) && out.length < max) { seen.add(k); out.push(String(x.r.url)); } });
+  return out;
+}
+/* merges what a round found into the list: a profile already there is kept once (the better score wins); returns the new list (best first), how many are new and which objects were replaced (so a ticked box follows) */
+function srcMergeResults(cur, found, seq) {
+  const list = (cur || []).slice(), at = {}; let n = Number(seq) || 0, added = 0, replaced = [], fresh = [];
+  list.forEach((r, i) => { if (r._n === undefined) r._n = n++; at[srcResultKey(r)] = i; });
+  (found || []).forEach(r => {
+    const k = srcResultKey(r), i = at[k];
+    if (i === undefined) { r._n = n++; at[k] = list.length; list.push(r); added++; fresh.push(r); }
+    else if ((Number(r.score) || 0) > (Number(list[i].score) || 0)) { r._n = list[i]._n; replaced.push([list[i], r]); list[i] = r; }
+  });
+  return { list: list.map((r, i) => ({ r: r, i: i })).sort((a, b) => (Number(b.r.score) || 0) - (Number(a.r.score) || 0) || a.i - b.i).map(x => x.r), added: added, fresh: fresh, replaced: replaced, seq: n };
+}
+const srcPlural = (n, one, many) => n + ' ' + (n === 1 ? one : many || one + 's');
+/* the cost line next to the button, and the cap check that runs before anything is sent: only the AI provider has a daily cap (a Brave / Google search costs no AI search) */
+function srcMoreCostText(n) { return 'uses ' + srcPlural(n, 'search', 'searches'); }
+function srcCapCheck(c, n) {
+  n = Math.max(0, Math.floor(Number(n) || 0)); const cap = c && srcAiProvOf(c) === 'ai' ? Number(c.aiSearchDailyCap) || 0 : 0;
+  if (!cap) return { run: n, left: null, blocked: false, msg: '' };
+  const left = Math.max(0, cap - (Number(c.aiSearchUsedToday) || 0));
+  if (left <= 0) return { run: 0, left: 0, blocked: true, msg: 'Daily AI search limit reached (' + cap + '). Try tomorrow or ask an admin to raise it in Sourcing > Connections.' };
+  return { run: Math.min(n, left), left: left, blocked: false, msg: left < n ? 'Only ' + left + ' of the ' + n + ' searches fit in today’s limit: running ' + left + '.' : '' };
+}
+/* the "Find more profiles" button (shown when the last search completed and fewer than 3 rounds were used); after the last round a line says so */
+function srcMoreHtml(o) {
+  o = o || {};
+  if (!o.show) return o.done ? '<span class="hint" id="sMoreDone" role="status">All ' + SRC_MAX_ROUNDS + ' rounds used. Change the job titles or places to search again.</span>' : '';
+  const n = Math.max(0, Math.floor(Number(o.n) || 0)), cost = srcMoreCostText(n), round = Number(o.round) || 2, what = round >= SRC_MAX_ROUNDS ? 'the place, the language and generic role words' : 'other job-title words';
+  const tip = 'Find more · ' + cost + '. Runs the same places and sources again with ' + what + ' and skips the profiles already listed (round ' + round + ' of ' + SRC_MAX_ROUNDS + ').';
+  return o.busy ? '<button class="btn sm" id="sMore" disabled aria-busy="true"><span class="spin"></span> Searching…</button>'
+    : '<button class="btn sm" id="sMore" title="' + esc(tip) + '">Find more profiles <span class="src-cost">· ' + esc(cost) + '</span></button>';
+}
+function srcMoreNoteText(note) {
+  if (!note) return '';
+  const added = Math.max(0, Math.floor(Number(note.added) || 0)), used = Math.max(0, Math.floor(Number(note.used) || 0)), known = Math.max(0, Math.floor(Number(note.known) || 0));
+  return srcPlural(added, 'new profile') + ' · ' + srcPlural(used, 'search', 'searches') + ' used' + (known ? ' · ' + known + ' already known' : '');
+}
+/* ---- the pipeline: what "Save selected to pipeline" does, said where the person looks ---- */
+const SRC_PIPE_TIP = 'Pipeline = your saved prospects with status, notes, contact and outreach. Nothing is sent to anyone.';
+const SRC_HINT_KEY = 'gc_src_pipe_hint';
+function srcSavedToastText(added, skipped) {
+  added = Math.max(0, Math.floor(Number(added) || 0)); skipped = Math.max(0, Math.floor(Number(skipped) || 0));
+  if (!added) return skipped ? 'Nothing new to save: ' + skipped + ' already in the Pipeline tab' : 'Nothing was saved';
+  return 'Saved ' + srcPlural(added, 'profile') + ' to the Pipeline tab' + (skipped ? ' (' + skipped + ' already there)' : '');
+}
+function srcPipeHintHtml() {
+  return '<div class="note src-hint" id="sPipeHint" role="note"><span><b>Save to pipeline</b> keeps the profiles you tick in the <b>Pipeline</b> tab: status, notes, contact and outreach. Nothing is sent to anyone.</span><button type="button" class="btn sm ghost" id="sPipeHintX" aria-label="Dismiss this tip">Got it</button></div>';
+}
+function srcHintSeen(store) { try { return !!store && store.getItem(SRC_HINT_KEY) === '1'; } catch (e) { return false; } }
+function srcHintDismiss(store) { try { if (!store) return false; store.setItem(SRC_HINT_KEY, '1'); return true; } catch (e) { return false; } }
+/* ---- one round of "Find more profiles", as data: what is sent (plan) and what is done with the answer (apply) ---- */
+/* the queries of one round: the same places x sources WITHOUT the sources the engine cannot search (Claude cannot read XING: the server would not send them either, so they are not counted or logged here), at most SRC_MAX_QUERIES */
+function srcRoundQueries(sn, P, srcKeys, round, c, eng) {
+  const locs = P.locs.length ? P.locs : [null], blocked = srcEffEngine(c, eng) === 'anthropic' ? srcBlockedSources(c, srcKeys) : [], qs = [];
+  const srcs = srcKeys.filter(k => blocked.indexOf(k) < 0).map(k => SRC_SOURCES.find(s => s.key === k)).filter(Boolean);
+  locs.forEach(l => srcs.forEach(s => qs.push(srcQueryObj(srcQuery(sn, P, l, s, round), s.key, l, srcIntent(sn, P, l, round)))));
+  return qs.slice(0, SRC_MAX_QUERIES);
+}
+/* the number on the "Find more profiles" button: the searches the next round will really run (no blocked source, inside the team's daily limit) */
+function srcMoreCount(st, c, eng) {
+  const lp = st && st.lastPlan; if (!lp || !lp.snap) return 0;
+  const sn = srcNormAreas(JSON.parse(JSON.stringify(lp.snap))), n = srcRoundQueries(sn, srcPieces(sn), lp.srcKeys || [], ((st && st.rounds) || 1) + 1, c, eng).length;
+  return srcCapCheck(c, n).run;
+}
+/* st = the Sourcing state (lastPlan, results, rounds, moreOk, loose), c = the search config (daily cap), eng = the engine key ('' = the server decides).
+   -> {round, qs, req, note} or {error, blocked?} ('' error = nothing to do). The daily limit is checked here, before anything is sent. */
+function srcMorePlan(st, c, eng) {
+  const lp = st.lastPlan, round = (st.rounds || 1) + 1;
+  if (!lp || !st.moreOk || !st.results || round > SRC_MAX_ROUNDS) return { error: '' };
+  const sn = srcNormAreas(JSON.parse(JSON.stringify(lp.snap))), P = srcPieces(sn), keys = (lp.srcKeys || []).filter(k => SRC_SOURCES.some(s => s.key === k));
+  if (!P.titles.length || !keys.length) return { error: 'Add at least one job title.' };
+  let qs = srcRoundQueries(sn, P, keys, round, c, eng);
+  if (!qs.length) return { error: 'The chosen sources cannot be searched with this engine. Pick the Gemini engine or open the search in Google.' };
+  const cap = srcCapCheck(c, qs.length); if (cap.blocked) return { error: cap.msg, blocked: true };
+  qs = qs.slice(0, cap.run);
+  const req = { queries: qs, terms: srcTerms(P, srcRoundTitles(P, round)), exclude: srcExcludeUrls(st.results), round: round }; if (eng) req.engine = eng; if (st.loose) req.minScore = 0;
+  return { round: round, qs: qs, req: req, note: cap.msg };
+}
+/* the answer of a round is merged into st (results, rounds, notes, counters, the round log); returns {added, replaced, fresh}.
+   The searches USED are the ones the server says it ran (r.queries: it drops the sources Claude cannot read and keeps to the per-person limits), not the ones that were sent; a round that ran nothing does not count. */
+function srcMoreApply(st, r, plan) {
+  r = r || {}; (st.results || []).forEach(x => { if (x && x._new) delete x._new; });
+  const m = srcMergeResults(st.results, r.results || [], st.seq || 0);
+  m.fresh.forEach(x => { x._new = true; });   // the profiles of THIS round carry a "new" chip
+  m.replaced.forEach(p => { if (st.sel && st.sel.has(p[0])) { st.sel.delete(p[0]); st.sel.add(p[1]); } });   // a ticked box follows the better copy
+  const asked = plan.qs.length, ran = typeof r.queries === 'number' && isFinite(r.queries) ? Math.max(0, Math.min(asked, Math.floor(r.queries))) : asked;
+  st.results = m.list; st.seq = m.seq; if (ran > 0) st.rounds = plan.round;
+  st.errors = (st.errors || []).concat((r.errors || []).filter(x => (st.errors || []).indexOf(x) < 0));
+  const hc = srcHiddenCounts(r); st.hiddenWeak = Math.max(st.hiddenWeak || 0, hc.low); st.hiddenNoTitle = Math.max(st.hiddenNoTitle || 0, hc.noTitle); st.hiddenOtherSrv = (st.hiddenOtherSrv || 0) + Math.max(0, Math.floor(Number(r.hidden_other_place) || 0));   // (the same weak link can come back in two rounds: the larger count, not the sum)
+  st.moreNote = { added: m.added, used: ran, known: Math.max(0, Math.floor(Number(r.hidden_known) || 0)) };
+  if (ran > 0) (st.roundLog || (st.roundLog = [])).push({ round: plan.round, used: ran, added: m.added, queries: plan.qs.slice(0, ran).map(q => ({ loc: q.loc, source: (SRC_SOURCES.find(s => s.key === q.source) || {}).label || q.source, q: q.q })) });
+  return m;
+}
+/* "Show weaker matches": the repeat search is MERGED into the list (what Find more brought, the ticks and the rounds stay; a profile that is already there is kept once, the better score wins) */
+function srcLooseApply(st, r, dir) {
+  r = r || {}; const m = srcMergeResults(st.results || [], (dir || []).concat(r.results || []), st.seq || 0);
+  m.replaced.forEach(p => { if (st.sel && st.sel.has(p[0])) { st.sel.delete(p[0]); st.sel.add(p[1]); } });
+  st.results = m.list; st.seq = m.seq; st.errors = (st.errors || []).concat((r.errors || []).filter(x => (st.errors || []).indexOf(x) < 0));
+  const hc = srcHiddenCounts(r); st.hiddenWeak = hc.low; st.hiddenNoTitle = Math.max(st.hiddenNoTitle || 0, hc.noTitle); st.hiddenOtherSrv = Math.max(st.hiddenOtherSrv || 0, Math.max(0, Math.floor(Number(r.hidden_other_place) || 0))); st.loose = true;
+  return m;
+}
+/* the area (and the other areas) of the search that FOUND the profiles: the snapshot of that search, not the form as it is now */
+function srcSaveArea(st) {
+  const sn = st && st.lastPlan && st.lastPlan.snap ? st.lastPlan.snap : st, keys = srcAreaKeys(sn);
+  return { area: keys[0] || (st && st.area) || '', also: keys.slice(1).map(k => (srcAreaOf(k) || {}).en).filter(Boolean) };
+}
+/* saves in chunks of 100 (the server keeps the first 100 of a call): -> {added, skipped, saved: [the items of the chunks that were saved], error: the error that stopped it, or null} */
+async function srcSaveChunks(items, send, size) {
+  size = size || 100; const out = { added: 0, skipped: 0, saved: [], error: null };
+  for (let i = 0; i < items.length; i += size) {
+    const part = items.slice(i, i + size);
+    try { const r = (await send(part)) || {}; out.added += Math.max(0, Math.floor(Number(r.added) || 0)); out.skipped += Math.max(0, Math.floor(Number(r.skipped) || 0)); part.forEach(x => out.saved.push(x)); }
+    catch (e) { out.error = e; break; }
+  }
+  return out;
+}
+/* a place typed by hand without a country ("Leticia"): the search cannot tell it from people called Leticia, so the form says what to type */
+const srcPlaceTip = text => { const t = String(text == null ? '' : text).trim(); return t.length >= 2 && t.indexOf(',') < 0 ? 'Tip: add the country, e.g. ' + t + ', Colombia' : ''; };
+const srcLocTips = locs => (locs || []).filter(l => l && l.custom && !l.country && String(l.label || '').trim().length >= 2 && String(l.label).indexOf(',') < 0).map(l => String(l.label).trim());
+/*SRCQ-PURE-END*/
+/* a toast with one action button (the page's toast() has none): used after saving, to jump to the Pipeline tab */
+function srcToastAction(msg, label, fn, ms) {
+  try {
+    const host = document.getElementById('toastBox'); if (!host) return toast(msg, ms);
+    const t = document.createElement('div'), sp = document.createElement('span'), b = document.createElement('button');
+    t.className = 'toast src-toast'; t.setAttribute('role', 'status'); sp.textContent = msg; b.type = 'button'; b.className = 'src-tact'; b.textContent = label;
+    b.onclick = () => { t.remove(); fn(); }; t.appendChild(sp); t.appendChild(b); host.appendChild(t); setTimeout(() => t.remove(), ms || 8000);
+  } catch (e) { toast(msg, ms); }
+}
+const srcOpenPipeline = () => { ADM.srcTab = 'pipeline'; ADM.tab = 'sourcing'; renderAdmin(); };
+const srcStore = () => { try { return window.localStorage; } catch (e) { return null; } };
 /* builds the workbook, saves it and says what is in it */
 function srcSaveXlsx(prefix, sheets) {
   try { const out = xlsxDownload(xlsxFileName(prefix), sheets); toast('Excel saved: ' + out.sheets.map(s => s.name + ' (' + s.rows + ')').join(', '), 5000); return out; }
@@ -2757,7 +3342,8 @@ async function renderSourcing(body, live = () => true) {
   if (!ADM.cfg) { try { ADM.cfg = await api.api_adminConfig(S.token); } catch (e) { try { ADM.cfg = { search: (await api.api_adminConnections(S.token)).search || {} }; } catch (x) { ADM.cfg = { search: {} }; } }   /* HR cannot read the settings, but can see whether the search is connected */ if (!live()) return; }
   if (!ADM.dirStats) { try { ADM.dirStats = await api.api_adminDirectoryStats(S.token); } catch (e) { ADM.dirStats = []; } if (!live()) return; }
   const T = SRC.tax;
-  const st = ADM.src || (ADM.src = { tab: 'search', area: SRC.areas[0].key, qlang: 'both', titles: '', skills: '', exclude: '', locs: [], contract: 'any', mode: 'any', exp: 'any', avail: 'any', langs: [], sources: { linkedin: true }, onlyPlace: true, top: 25, results: null, errors: [], saved: {}, locFilter: '', fStatus: '', q: '', engine: '', sortBy: 'score', dismissed: new Set(), hiddenWeak: 0, hiddenNoTitle: 0, loose: false, via: '' });
+  const st = ADM.src || (ADM.src = { tab: 'search', area: SRC.areas[0].key, areas: [], added: {}, rounds: 1, qlang: 'both', titles: '', skills: '', exclude: '', locs: [], contract: 'any', mode: 'any', exp: 'any', avail: 'any', langs: [], sources: { linkedin: true }, onlyPlace: true, top: 25, results: null, errors: [], saved: {}, locFilter: '', fStatus: '', q: '', engine: '', sortBy: 'score', dismissed: new Set(), hiddenWeak: 0, hiddenNoTitle: 0, loose: false, via: '' });
+  srcNormAreas(st); if (!(st.rounds >= 1)) st.rounds = 1;   // an older saved state has no extra areas / rounds
   st.sources = srcCleanSources(st.sources); if (st.onlyPlace === undefined) st.onlyPlace = true;   // an older saved state may still list the removed open-web source: it is dropped, and it never runs
   if (ADM.srcTab) { st.tab = ADM.srcTab; ADM.srcTab = null; }   // asked by another page (e.g. Outreach -> pipeline)
   const opt = (arr, label) => arr.map(x => '<option value="' + esc(x.key) + '">' + esc(label(x)) + '</option>').join('');
@@ -2781,10 +3367,11 @@ async function renderSourcing(body, live = () => true) {
   function fillArea(reset) {
     const a = A(); if (!a) return;
     if (reset) {
-      st.titles = (st.qlang === 'es' ? a.ts.slice(0, 4) : st.qlang === 'en' ? a.te.slice(0, 4) : a.ts.slice(0, 3).concat(a.te.slice(0, 3))).join(', ');
+      st.titles = srcAreaTitles(a, st.qlang).join(', ');
       st.skills = a.ms.slice(0, 3).join('\n'); st.exclude = a.ex.join('\n');
       const lv = { Basic: 'basic', Intermediate: 'intermediate', Advanced: 'advanced' }, m = a.md.find(x => x.module === 'english');
       st.langs = m ? [{ lang: 'en', level: lv[m.level] || 'intermediate' }] : [];
+      const extra = st.areas.slice(); st.areas = []; st.added = {}; extra.forEach(k => { const x = srcAreaOf(k); if (x) srcAddArea(st, x); });   // the other areas of the search keep their lines
     }
   }
   function tabSearch() {
@@ -2792,6 +3379,7 @@ async function renderSourcing(body, live = () => true) {
     const a = A(), hint0 = srcSearchHint(ADM.cfg.search, srcEngineCur(ADM.cfg.search, st.engine));
     box.innerHTML = '<div class="src-layout"><div class="card src-form"><h3>Search profile</h3>' +
       '<label for="sArea">Area of interest</label><select id="sArea">' + SRC.areas.map(x => '<option value="' + esc(x.key) + '">' + esc(x.es) + ' · ' + esc(x.en) + '</option>').join('') + '</select>' +
+      '<div class="src-also" id="sAlsoBox"></div>' +
       '<label>Cities and ports <span class="hint">(several allowed; none = worldwide)</span></label><div class="src-chips" id="sLocs"></div>' +
       '<div class="hint" id="sLocNote" style="margin-top:6px"></div>' +
       '<div class="src-row" style="margin-top:8px;grid-template-columns:1fr"><div class="src-combo"><input id="sLocQ" type="text" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="sLocList" aria-autocomplete="list" aria-label="Type a city or port" placeholder="Type a city or port… (e.g. Portimão)"><div class="src-sug hidden" id="sLocList" role="listbox"></div></div>' +
@@ -2809,17 +3397,22 @@ async function renderSourcing(body, live = () => true) {
       '<div id="sRes"></div></div><div class="card" style="margin-top:14px"><div class="toolbar" style="margin:0 0 6px"><h3>Boolean string</h3><span class="sp"></span><button class="btn sm" id="sCopyB">Copy</button></div><div class="hint">For LinkedIn Recruiter, CV databases and job-board search boxes.</div><div class="src-q" id="sBool" style="font:13px/1.5 ui-monospace,Consolas,monospace;background:var(--code-bg);color:var(--code-ink);padding:10px 12px;border-radius:var(--r-sm);white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto;margin-top:6px"></div></div></div></div>';
     const $s = id => $('#' + id, box);
     const sync = () => {
-      $s('sArea').value = st.area; $s('sQL').value = st.qlang; $s('sTitles').value = st.titles; $s('sSkills').value = st.skills; $s('sEx').value = st.exclude;
+      $s('sArea').value = st.area; $s('sQL').value = st.qlang; drawAlso(); $s('sTitles').value = st.titles; $s('sSkills').value = st.skills; $s('sEx').value = st.exclude;
       [['sCon', 'contract'], ['sMode', 'mode'], ['sExp', 'exp'], ['sAv', 'avail']].forEach(([id, k]) => { $s(id).value = st[k]; });
       $s('sNice').innerHTML = (A().ns || []).map((n, i) => '<button class="nice" data-n="' + i + '" title="Add as a required skill">+ ' + esc(srcClean(n).slice(0, 36)) + '</button>').join('');
       drawLocs(); drawLangs(); drawSrc(); info(); drawRes();
     };
     /* contacts the internal directory holds for a place (same match as the server: the port text contains the place or the other way round) */
     const dirCount = l => (ADM.dirStats || []).reduce((n, p) => { const port = srtNorm(p.port); return n + (port && (l.variants && l.variants.length ? l.variants : [l.label]).some(v => { v = srtNorm(v); return v && (port.indexOf(v) >= 0 || v.indexOf(port) >= 0); }) ? p.count : 0); }, 0);
+    /* several areas at once: "Also search" chips; an added area merges its titles and required skills into the boxes (still editable), removing the chip takes back only those lines */
+    const drawAlso = focus => { const h = $s('sAlsoBox'); if (!h) return; h.innerHTML = srcAlsoHtml(st, SRC.areas, SRC_MAX_AREAS); if (focus) { const n = $s('sAlsoAdd') || $s('sAlsoMax'); if (n) n.focus(); } };   // (after the 4th area the select is gone: the keyboard goes to the "Up to 4 areas" line)
+    const syncAreaBoxes = () => { $s('sTitles').value = st.titles; $s('sSkills').value = st.skills; };
+    const addArea = a => { if (srcAreaKeys(st).length >= SRC_MAX_AREAS) return toast('Up to ' + SRC_MAX_AREAS + ' areas per search.'); if (!srcAddArea(st, a)) return; syncAreaBoxes(); drawAlso(true); info(); };
     const drawLocs = () => {
       $s('sLocs').innerHTML = st.locs.length ? st.locs.map(k => { const l = srcItem(T.locations, k); return l ? '<span class="chip on">' + esc(srcLocName(l)) + '<button data-lx="' + esc(k) + '" aria-label="Remove ' + esc(srcLocName(l)) + '">✕</button></span>' : ''; }).join('') : '<span class="hint">Worldwide</span>';
       const none = ADM.dirStats && ADM.dirStats.length ? st.locs.map(k => srcItem(T.locations, k)).filter(l => l && l.key !== 'any' && !/^remote/.test(l.key) && !dirCount(l)) : [];
-      $s('sLocNote').innerHTML = none.length ? 'No internal directory contacts yet for ' + none.map(l => '<b>' + esc(srcLocName(l)) + '</b>').join(', ') + '. The web search still works; add contacts in the Directory tab.' : '';
+      const tips = srcLocTips(st.locs.map(k => srcItem(T.locations, k)));
+      $s('sLocNote').innerHTML = [none.length ? 'No internal directory contacts yet for ' + none.map(l => '<b>' + esc(srcLocName(l)) + '</b>').join(', ') + '. The web search still works; add contacts in the Directory tab.' : '', tips.length ? 'Add the country to ' + tips.map(t => '<b>' + esc(t) + '</b>').join(', ') + ' (for example “' + esc(tips[0]) + ', Colombia”): without it the search also finds people with that first name.' : ''].filter(Boolean).join(' ');
     };
     /* type-ahead: type a few letters, pick a suggestion with the mouse or ↑ ↓ Enter; anything not in the list can be added as a new place */
     let sug = [], act = -1;
@@ -2828,7 +3421,7 @@ async function renderSourcing(body, live = () => true) {
     const showSug = () => {
       const q = $s('sLocQ').value.trim(); sug = srcSuggestLocs(q); const o = sugOpts(); if (act >= o.length) act = o.length - 1;
       if (!q || !o.length) return hideSug();
-      $s('sLocList').innerHTML = o.map((x, i) => x.fresh ? '<div role="option" class="new' + (i === act ? ' act' : '') + '" data-new="' + esc(x.fresh) + '">+ Add “' + esc(x.fresh) + '” as a new place</div>' : '<div role="option" class="' + (i === act ? 'act' : '') + '" data-sk="' + esc(x.l.key) + '">' + esc(x.l.label) + '<small>' + esc(x.l.group) + '</small></div>').join('');
+      $s('sLocList').innerHTML = o.map((x, i) => x.fresh ? '<div role="option" class="new' + (i === act ? ' act' : '') + '" data-new="' + esc(x.fresh) + '">+ Add “' + esc(x.fresh) + '” as a new place' + (srcPlaceTip(x.fresh) ? '<small>' + esc(srcPlaceTip(x.fresh)) + '</small>' : '') + '</div>' : '<div role="option" class="' + (i === act ? 'act' : '') + '" data-sk="' + esc(x.l.key) + '">' + esc(x.l.label) + '<small>' + esc(x.l.group) + '</small></div>').join('');
       $s('sLocList').classList.remove('hidden'); $s('sLocQ').setAttribute('aria-expanded', 'true');
     };
     const pickLoc = key => { if (!st.locs.includes(key)) { if (st.locs.length >= SRC_MAX_LOCS) toast('Up to ' + SRC_MAX_LOCS + ' places per search.'); else st.locs.push(key); } $s('sLocQ').value = ''; act = -1; hideSug(); drawLocs(); info(); };
@@ -2855,10 +3448,10 @@ async function renderSourcing(body, live = () => true) {
       const R = st.results, res = $s('sRes'); if (!R) { res.innerHTML = '<div class="hint" style="margin-top:12px">Choose the filters and press <b>Search profiles</b>. The best matches are listed first.</div>'; return; }
       const locs = [...new Set(R.map(r => r.loc).filter(Boolean))];
       res.innerHTML = '<div id="sNotes"></div>' +
-        '<div class="src-bar"><b id="sResCount" tabindex="-1">' + R.length + ' profile' + (R.length === 1 ? '' : 's') + '</b>' + (st.via ? '<span class="hint">via ' + esc(st.via) + '</span>' : '') + '<span class="hint">showing the top</span><select id="sTop" aria-label="How many to show">' + [10, 25, 50, 100].map(n => '<option' + (n === st.top ? ' selected' : '') + '>' + n + '</option>').join('') + '</select>' +
+        '<div class="src-bar"><b id="sResCount" tabindex="-1">' + R.length + ' profile' + (R.length === 1 ? '' : 's') + '</b>' + srcMoreHtml({ show: !!st.moreOk && (st.rounds || 1) < SRC_MAX_ROUNDS, done: !!st.moreOk && (st.rounds || 1) >= SRC_MAX_ROUNDS, busy: st.searching === true, n: srcMoreCount(st, ADM.cfg.search, srcEngineShown(ADM.cfg.search) ? srcEngineCur(ADM.cfg.search, st.engine) : ''), round: (st.rounds || 1) + 1 }) + (st.moreNote ? '<span class="hint" id="sMoreNote" role="status">' + esc(srcMoreNoteText(st.moreNote)) + '</span>' : '') + (st.via ? '<span class="hint">via ' + esc(st.via) + '</span>' : '') + '<span class="hint">showing the top</span><select id="sTop" aria-label="How many to show">' + [10, 25, 50, 100].map(n => '<option' + (n === st.top ? ' selected' : '') + '>' + n + '</option>').join('') + '</select>' +
         (locs.length > 1 ? '<select id="sLf" aria-label="Filter by place"><option value="">All places</option>' + locs.map(l => '<option' + (l === st.locFilter ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>' : '') +
         '<select id="sSort" aria-label="Sort by">' + SRC_SORTS.map(o => '<option value="' + o[0] + '"' + (o[0] === (st.sortBy || 'score') ? ' selected' : '') + '>Sort: ' + esc(o[1]) + '</option>').join('') + '</select>' +
-        srtSearchHtml('src-res', 'Search name, headline or place…', 'Search the results', 'sQ') + '<span class="hint" id="sRn"></span><span class="sp"></span><button class="btn sm" id="sXlsx" title="Excel file with all the loaded profiles (also the ones hidden by the filters) and a sheet with the search">⤓ Export Excel</button><button class="btn sm" id="sSaveSel">Save selected</button><button class="btn sm" id="sSeqSel" title="Save the ticked profiles to the pipeline and add them to an outreach sequence">Add selected to sequence…</button><button class="btn sm primary" id="sSaveAll">Save these to pipeline</button></div>' +
+        srtSearchHtml('src-res', 'Search name, headline or place…', 'Search the results', 'sQ') + '<span class="hint" id="sRn"></span><span class="sp"></span><button class="btn sm" id="sXlsx" title="Excel file with all the loaded profiles (also the ones hidden by the filters) and a sheet with the search">⤓ Export Excel</button><button class="btn sm" id="sSaveSel" title="' + esc(SRC_PIPE_TIP) + '">Save selected to pipeline</button><button class="btn sm" id="sSeqSel" title="Save the ticked profiles to the pipeline and add them to an outreach sequence">Add selected to sequence…</button><button class="btn sm primary" id="sSaveAll" title="' + esc(SRC_PIPE_TIP) + '">Save these to pipeline</button></div>' + (st.hintSeen || srcHintSeen(srcStore()) ? '' : srcPipeHintHtml()) +
         '<div class="src-onlyrow" id="sOnlyBox"></div>' + srcWeakHtml(st.hiddenWeak, st.loose, st.hiddenNoTitle) + '<div id="sResT"></div>' +
         '<div class="hint" style="margin-top:8px">The match score compares the profile text (title, snippet) with your titles, skills, places and languages. Open the profile to confirm.</div>';
       drawNotes(); drawResT();
@@ -2883,8 +3476,12 @@ async function renderSourcing(body, live = () => true) {
       if (!items.length) return toast('Nothing selected.');
       const noKey = items.filter(x => !x.url && !x.email).length; items = items.filter(x => x.url || x.email); if (!items.length) return toast('These contacts have no web page or email to save.');
       if (noKey) toast(noKey + ' contact(s) without a web page or email were skipped.');
-      try { const r = await api.api_adminProspectsAdd(S.token, items.map(x => srcPayload(x, st.area))); items.forEach(x => { st.saved[x.url || x.email] = true; if (st.sel) st.sel.delete(x); }); toast('Saved ' + r.added + (r.skipped ? ' (' + r.skipped + ' already in the pipeline)' : '')); drawRes(); }
-      catch (e) { if (isSessionErr(e)) return sessionLost(); toast(e.message, 6000); }
+      const sa = srcSaveArea(st), run = await srcSaveChunks(items, part => api.api_adminProspectsAdd(S.token, part.map(x => srcPayload(x, sa.area, sa.also))));   // chunks of 100: the server keeps only the first 100 of a call
+      run.saved.forEach(x => { st.saved[x.url || x.email] = true; if (st.sel) st.sel.delete(x); });   // only what was really saved is marked
+      if (run.error && isSessionErr(run.error)) return sessionLost();
+      if (run.saved.length) srcToastAction(srcSavedToastText(run.added, run.skipped), 'Open Pipeline', srcOpenPipeline, 9000);
+      if (run.error) toast((run.error.message || 'Could not save.') + (run.saved.length ? ' (' + run.saved.length + ' of ' + items.length + ' profiles were saved)' : ''), 6000);
+      drawRes();
     }
     /* the ticked profiles are saved to the pipeline first (an outreach sequence works on pipeline prospects), then the sequence is chosen */
     async function addSelToSeq() {
@@ -2892,7 +3489,7 @@ async function renderSourcing(body, live = () => true) {
       const ok = items.filter(x => x.url || x.email); if (!ok.length) return toast('These contacts have no web page or email.');
       const bo = busyOverlay('Saving to the pipeline…'); let found;
       try {
-        for (const part of ouChunk(ok, 100)) { await api.api_adminProspectsAdd(S.token, part.map(x => srcPayload(x, st.area))); part.forEach(x => { st.saved[x.url || x.email] = true; }); }
+        const sa = srcSaveArea(st); for (const part of ouChunk(ok, 100)) { await api.api_adminProspectsAdd(S.token, part.map(x => srcPayload(x, sa.area, sa.also))); part.forEach(x => { st.saved[x.url || x.email] = true; }); }
         found = ouFindIds(ok, await api.api_adminProspects(S.token)); bo.close();
       } catch (e) { bo.close(); if (isSessionErr(e)) return sessionLost(); return toast(e.message, 6000); }
       drawRes();
@@ -2919,33 +3516,41 @@ async function renderSourcing(body, live = () => true) {
       toast('Opened Google search ' + (i + 1) + ' of ' + qs.length + (qs.length > 1 ? '. Click the link again for the next one.' : '.'));
       setTimeout(info, 0);   // after the browser has followed the link: the href then points at the next search
     }
-    /* o.loose: repeat the search with the weak-match filter off (minScore 0) */
+    /* o.loose: repeat the search with the weak-match filter off (minScore 0); the answer is MERGED into the list (what Find more brought and the ticked boxes stay) */
     async function go(o) {
       if (st.searching) return toast('A search is already running: wait for it to finish.');   // the button of a redrawn tab is disabled too; each click would be paid AI calls
-      noProv = false; const loose = !!(o && o.loose);
+      noProv = false; const loose = !!(o && o.loose), merge = loose && Array.isArray(st.results) && !!st.lastPlan;
       const pl = plan(); if (!pl.P.titles.length) return toast('Add at least one job title.');
       if (!pl.srcs.length) return toast('Choose at least one source.');
-      if (!await ensureProvider()) return;
-      drawEng();
-      const qs = []; pl.locs.forEach(l => pl.srcs.forEach(s => qs.push(srcQueryObj(srcQuery(st, pl.P, l, s), s.key, l))));
-      st.searching = true; const my = (st.reqId = (st.reqId || 0) + 1), done = () => { if (my === st.reqId) st.searching = false; };
-      const btn = $s('sGo'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Searching…'; showNoProv(false);
+      st.searching = true; const my = (st.reqId = (st.reqId || 0) + 1), done = () => { if (my === st.reqId) st.searching = false; };   // set BEFORE the first await (ensureProvider may call the network): a second click can never send a second paid search
+      const btn = $s('sGo'); if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Searching…'; }
+      if (!await ensureProvider()) { done(); const b0 = $s('sGo'); if (b0) { b0.disabled = false; b0.textContent = '🔎 Search profiles'; } return; }
+      drawEng(); showNoProv(false);
+      const qs = []; pl.locs.forEach(l => pl.srcs.forEach(s => qs.push(srcQueryObj(srcQuery(st, pl.P, l, s), s.key, l, srcIntent(st, pl.P, l, 1)))));
       const terms = srcTerms(pl.P), ports = pl.P.locs.flatMap(l => [l.variants[0], srcLocName(l)]);
       // the internal directory (e.g. the port benchmarking contacts) is searched together with the web
       const dirP = (ADM.dirStats && ADM.dirStats.length ? api.api_adminDirectorySearch(S.token, { ports, terms, minScore: 30, limit: 100 }) : Promise.resolve({ results: [] })).catch(() => ({ results: [] }));
       const req = { queries: qs.slice(0, SRC_MAX_QUERIES), terms }, eng = srcEngineShown(ADM.cfg.search) ? srcEngineCur(ADM.cfg.search, st.engine) : '';
       if (eng) req.engine = eng; if (loose) req.minScore = 0;
       const snapshot = snap(pl, req.queries, eng, loose);   // what the Excel export says about this search (the form may change afterwards)
+      const lastPlan = { snap: srcSnapState(st), srcKeys: pl.srcs.map(s => s.key), n: req.queries.length };   // what "Find more profiles" repeats
       try {
         const r = await api.api_adminSourcingSearch(S.token, req), d = await dirP;
         if (typeof r.remaining_today === 'number' && ADM.cfg.search && Number(ADM.cfg.search.aiSearchDailyCap)) ADM.cfg.search.aiSearchUsedToday = Math.max(0, Number(ADM.cfg.search.aiSearchDailyCap) - r.remaining_today);   // the "left today" figure follows the server
         if (my === st.reqId) {
-          st.results = d.results.map(srcFromDir).concat(r.results).sort((a, b) => b.score - a.score); st.errors = r.errors || []; st.locFilter = ''; st.sel = new Set();
-          st.dismissed = new Set(); { const hc = srcHiddenCounts(r); st.hiddenWeak = hc.low; st.hiddenNoTitle = hc.noTitle; } st.loose = loose; st.via = srcEngineName(r.engine) || ''; st.hiddenOtherSrv = Math.max(0, Math.floor(Number(r.hidden_other_place) || 0)); st.lastSearch = snapshot;
+          if (merge) { srcLooseApply(st, r, d.results.map(srcFromDir)); st.lastSearch = Object.assign({}, st.lastSearch || {}, { minScore: snapshot.minScore }); }   // the list, the rounds, the ticks and the log stay
+          else {
+            st.results = d.results.map(srcFromDir).concat(r.results).sort((a, b) => b.score - a.score); st.errors = r.errors || []; st.locFilter = ''; st.sel = new Set();
+            st.results.forEach((x, i) => { x._n = i; }); st.seq = st.results.length; st.rounds = 1; st.roundLog = []; st.moreNote = null; st.moreOk = true; st.lastPlan = lastPlan;   // a new search starts again at round 1
+            st.dismissed = new Set(); { const hc = srcHiddenCounts(r); st.hiddenWeak = hc.low; st.hiddenNoTitle = hc.noTitle; } st.loose = loose; st.hiddenOtherSrv = Math.max(0, Math.floor(Number(r.hidden_other_place) || 0)); st.lastSearch = snapshot;
+          }
+          st.via = srcEngineName(r.engine) || '';
         }
       }
       catch (e) {
-        done(); if (isSessionErr(e)) return sessionLost(); st.errors = [e.message]; const d = await dirP; st.results = d.results.map(srcFromDir).sort((a, b) => b.score - a.score); st.sel = new Set(); st.dismissed = new Set(); st.hiddenWeak = 0; st.hiddenNoTitle = 0; st.loose = false; st.via = ''; st.hiddenOtherSrv = 0; st.lastSearch = snapshot;
+        done(); if (isSessionErr(e)) return sessionLost();
+        if (merge) st.errors = (st.errors || []).concat(e.message);   // the list found so far stays
+        else { st.errors = [e.message]; const d = await dirP; st.results = d.results.map(srcFromDir).sort((a, b) => b.score - a.score); st.sel = new Set(); st.dismissed = new Set(); st.hiddenWeak = 0; st.hiddenNoTitle = 0; st.loose = false; st.via = ''; st.hiddenOtherSrv = 0; st.lastSearch = snapshot; st.moreOk = false; st.rounds = 1; st.roundLog = []; st.moreNote = null; st.lastPlan = lastPlan; }   // (lastPlan: what these directory profiles are saved under)
         if (srcNoProviderError(e.message)) { ADM.cfg.search = Object.assign({}, ADM.cfg.search, { searchConfigured: false }); st.errors = []; noProv = true; }   // the AI flags stay: the note can offer the AI key that exists
       }
       done();
@@ -2958,7 +3563,7 @@ async function renderSourcing(body, live = () => true) {
       const a = A() || {}, item = (arr, k) => { const it = srcItem(arr, k); return it && it.key !== 'any' ? it.en : ''; };
       const prefs = [['Contract', T.contractTypes, st.contract], ['Work mode', T.workModes, st.mode], ['Experience', T.experience, st.exp], ['Availability', T.availability, st.avail]].map(x => item(x[1], x[2]) ? x[0] + ': ' + item(x[1], x[2]) : '').filter(Boolean).join('; ');
       const label = k => (SRC_SOURCES.find(s => s.key === k) || {}).label || k;
-      return { at: Date.now(), area: [a.en, a.es].filter(Boolean).join(' · '), titles: pl.P.titles.join('; '), skills: pl.P.skills.join(' ; '), exclude: pl.P.ex.join('; '), languages: st.langs.map(l => { const lg = srcItem(T.languages, l.lang), lv = srcItem(T.languageLevels, l.level); return lg ? lg.en + (lv ? ' (' + lv.en + ')' : '') : ''; }).filter(Boolean).join('; '),
+      return { at: Date.now(), area: [a.en, a.es].filter(Boolean).join(' · ') + (srcAlsoNames(st).length ? ' + also: ' + srcAlsoNames(st).join(', ') : ''), titles: pl.P.titles.join('; '), skills: pl.P.skills.join(' ; '), exclude: pl.P.ex.join('; '), languages: st.langs.map(l => { const lg = srcItem(T.languages, l.lang), lv = srcItem(T.languageLevels, l.level); return lg ? lg.en + (lv ? ' (' + lv.en + ')' : '') : ''; }).filter(Boolean).join('; '),
         preferences: prefs, places: pl.P.locs.map(srcLocName), sources: pl.srcs.map(s => s.label), engine: srcEngineName(eng) || eng || '', minScore: loose ? '0 (weaker matches included)' : '30 (default)', queries: qs.map(q => ({ loc: q.loc, source: label(q.source), q: q.q })) };
     }
     async function exportResults() {
@@ -2971,7 +3576,7 @@ async function renderSourcing(body, live = () => true) {
       const status = {};
       try { (await api.api_adminProspects(S.token)).forEach(p => { if (p.url) status[p.url] = p.status; if (p.email) status[String(p.email).toLowerCase()] = p.status; }); } catch (e) { if (isSessionErr(e)) return sessionLost(); }   // the pipeline status is optional
       const stat = r => { const k = status[r.url] || (r.email ? status[String(r.email).toLowerCase()] : ''); return k ? (SRC_STATUS[k] || [k])[0] : (st.saved && st.saved[r.url || r.email] ? 'Saved' : ''); };
-      const info = Object.assign({}, st.lastSearch || {}, { via: st.via, counts: { loaded: R.length, shown: resShown().length, otherPlace: srcOtherCount(R), hiddenOther: st.onlyPlace !== false ? srcOtherCount(resBase()) : 0, serverOther: st.hiddenOtherSrv || 0, hiddenLow: st.hiddenWeak, hiddenNoTitle: st.hiddenNoTitle, directory: R.filter(r => r.directory).length },
+      const info = Object.assign({}, st.lastSearch || {}, { via: st.via, rounds: st.roundLog || [], counts: { loaded: R.length, shown: resShown().length, otherPlace: srcOtherCount(R), sameCountry: R.filter(r => srcLocMatch(r) === 'country').length, hiddenOther: st.onlyPlace !== false ? srcOtherCount(resBase()) : 0, serverOther: st.hiddenOtherSrv || 0, hiddenLow: st.hiddenWeak, hiddenNoTitle: st.hiddenNoTitle, directory: R.filter(r => r.directory).length },
         filters: { onlyPlace: st.onlyPlace !== false, text: srtQ('src-res'), place: st.locFilter, sort: (SRC_SORTS.find(o => o[0] === (st.sortBy || 'score')) || [])[1], top: st.top } });
       srcSaveXlsx('sourcing results', [srcResultSheet(srcSortList(R, st.sortBy || 'score'), { status: stat, engineName: srcEngineName }), srcInfoSheet(info)]);
     }
@@ -2979,17 +3584,45 @@ async function renderSourcing(body, live = () => true) {
     async function showWeak() {
       if (st.searching) return toast('A search is already running: wait for it to finish.');
       const n = Math.min(plan().n, SRC_MAX_QUERIES);
-      if (!await confirmBox('Show weaker matches?', '<p style="margin:0">This repeats the search with the weak-match filter off, so it uses ' + n + ' more AI search' + (n === 1 ? '' : 'es') + '. Weak matches have low scores and are usually not relevant.</p>', 'Search again')) return;
+      if (!await confirmBox('Show weaker matches?', '<p style="margin:0">This repeats the search with the weak-match filter off, so it uses ' + n + ' more AI search' + (n === 1 ? '' : 'es') + '. The weaker profiles are added to the list: nothing you already found is removed. They have low scores and are usually not relevant.</p>', 'Search again')) return;
       go({ loose: true });
+    }
+    /* "Find more profiles": the SAME places x sources again with other phrasing (round 2: the next job titles, no skills; round 3: place + language + generic role words),
+       skipping the profiles already listed (exclude = their links, newest first, up to 60). What it finds is merged into the list (a profile is kept once, the better score wins). */
+    /* "Find more profiles": the SAME places x sources again with other phrasing (round 2: the next job titles, no skills; round 3: place + language + generic role words),
+       skipping the profiles already listed (exclude = their links, newest first, up to 60). What it finds is merged into the list (a profile is kept once, the better score wins).
+       srcMorePlan / srcMoreApply (pure, tested) build the request and merge the answer; this function is the glue (busy states, one search at a time). */
+    async function findMore() {
+      if (st.searching) return toast('A search is already running: wait for it to finish.');
+      if (!st.lastPlan || !st.moreOk || !st.results || (st.rounds || 1) >= SRC_MAX_ROUNDS) return;
+      st.searching = true; const my = (st.reqId = (st.reqId || 0) + 1), done = () => { if (my === st.reqId) st.searching = false; };   // set BEFORE the first await (see go()): a second click can never send a second paid round
+      const go0 = $s('sGo'), mb = $s('sMore'); if (go0) { go0.disabled = true; go0.innerHTML = '<span class="spin"></span> Searching…'; } if (mb) { mb.disabled = true; mb.setAttribute('aria-busy', 'true'); mb.innerHTML = '<span class="spin"></span> Searching…'; } showNoProv(false);
+      /* the page of the Search tab as it is NOW; the whole bar is redrawn, so the keyboard goes to the profile count (keepProv: leave the "no provider" box as it is) */
+      const finish = keepProv => { const ui = st.ui; if (st.tab !== 'search' || !ui || !ui.alive()) return; const b2 = ui.$s('sGo'); if (b2) { b2.disabled = false; b2.textContent = '🔎 Search profiles'; } ui.drawRes(); ui.info(); if (!keepProv) ui.showNoProv(noProv); const c = ui.$s('sResCount'); if (c && c.focus) c.focus({ preventScroll: true }); };
+      if (!await ensureProvider()) { done(); return finish(true); }
+      const eng = srcEngineShown(ADM.cfg.search) ? srcEngineCur(ADM.cfg.search, st.engine) : '', plan = srcMorePlan(st, ADM.cfg.search, eng);
+      if (plan.error) { done(); finish(); return plan.error ? toast(plan.error, 6000) : undefined; } if (plan.note) toast(plan.note, 5000);
+      drawEng();
+      let failed = '';
+      try {
+        const r = await api.api_adminSourcingSearch(S.token, plan.req);
+        if (typeof r.remaining_today === 'number' && ADM.cfg.search && Number(ADM.cfg.search.aiSearchDailyCap)) ADM.cfg.search.aiSearchUsedToday = Math.max(0, Number(ADM.cfg.search.aiSearchDailyCap) - r.remaining_today);
+        if (my === st.reqId) { srcMoreApply(st, r, plan); st.via = srcEngineName(r.engine) || st.via; }
+      } catch (e) {
+        done(); if (isSessionErr(e)) return sessionLost(); failed = e.message; st.errors = (st.errors || []).concat(e.message);
+        if (srcNoProviderError(e.message)) { ADM.cfg.search = Object.assign({}, ADM.cfg.search, { searchConfigured: false }); st.errors = st.errors.filter(x => x !== e.message); noProv = true; }
+      }
+      done(); finish();
+      if (failed) toast(failed, 6000);
     }
     box.onchange = e => {
       const t = e.target;
-      if (t.id === 'sArea') { st.area = t.value; fillArea(true); sync(); }
+      if (t.id === 'sArea') { st.area = t.value; st.areas = st.areas.filter(k => k !== st.area); fillArea(true); sync(); }
       else if (t.id === 'sQL') { st.qlang = t.value; fillArea(true); sync(); }
       else if (t.id === 'sLocGrp' && t.value) { const ks = T.locations.filter(l => l.group === t.value).map(l => l.key); let skipped = 0; ks.forEach(k => { if (st.locs.includes(k)) return; if (st.locs.length >= SRC_MAX_LOCS) skipped++; else st.locs.push(k); }); if (skipped) toast('Up to ' + SRC_MAX_LOCS + ' places per search: ' + skipped + ' not added.'); t.value = ''; drawLocs(); info(); }
       else if (t.matches('[data-l]')) { st.langs[+t.dataset.l].lang = t.value; info(); } else if (t.matches('[data-v]')) { st.langs[+t.dataset.v].level = t.value; info(); }
       else if (t.id === 'sTop') { st.top = +t.value; drawRes(); } else if (t.id === 'sLf') { st.locFilter = t.value; drawRes(); }
-      else if (t.id === 'sOnly') { st.onlyPlace = t.checked; if (t.checked && st.sel) (st.results || []).forEach(r => { if (srcLocMatch(r) === 'no') st.sel.delete(r); }); drawResT(); }   // nothing is searched again, so nothing is paid: it only changes what is listed
+      else if (t.id === 'sOnly') { st.onlyPlace = t.checked; if (t.checked && st.sel) (st.results || []).forEach(r => { if (srcIsOtherPlace(r)) st.sel.delete(r); }); drawResT(); }   // nothing is searched again, so nothing is paid: it only changes what is listed
       else if (t.id === 'sSort') { st.sortBy = SRC_SORTS.some(o => o[0] === t.value) ? t.value : 'score'; drawResT(); }
       else if (t.id === 'sAllChk') { if (!st.sel) st.sel = new Set(); $$('[data-c]', box).forEach(c => { c.checked = t.checked; const r = st.results[+c.dataset.c]; if (r) { if (t.checked) st.sel.add(r); else st.sel.delete(r); } }); t.indeterminate = false; }
       else if (t.matches('[data-c]')) { if (!st.sel) st.sel = new Set(); const r = st.results[+t.dataset.c]; if (r) { if (t.checked) st.sel.add(r); else st.sel.delete(r); } syncAll(); }
@@ -3012,9 +3645,12 @@ async function renderSourcing(body, live = () => true) {
       if (g('#sGo')) go();
       else if (g('#sGoogle')) googleClick(e);
       else if ((el = g('[data-eng]'))) { st.engine = el.dataset.eng; drawEng(); info(); }
+      else if (g('#sAlsoBtn')) { const sl = $s('sAlsoAdd'), a = sl ? srcAreaOf(sl.value) : null; if (!a) toast('Choose an area to add first.'); else addArea(a); }
       else if (g('#sWeak')) showWeak();
+      else if (g('#sMore')) findMore();
+      else if (g('#sPipeHintX')) { st.hintSeen = true; srcHintDismiss(srcStore()); const h = $s('sPipeHint'); if (h) h.remove(); }   // (in memory too: with the storage blocked the tip would come back on every redraw)
       else if (g('#sOnlyShow')) { st.onlyPlace = false; drawResT(); }
-      else if (g('#sOnlyHide')) { st.onlyPlace = true; if (st.sel) (st.results || []).forEach(r => { if (srcLocMatch(r) === 'no') st.sel.delete(r); }); drawResT(); }
+      else if (g('#sOnlyHide')) { st.onlyPlace = true; if (st.sel) (st.results || []).forEach(r => { if (srcIsOtherPlace(r)) st.sel.delete(r); }); drawResT(); }
       else if (g('#sXlsx')) exportResults();
       else if ((el = g('[data-nx]'))) { (st.dismissed || (st.dismissed = new Set())).add(el.dataset.nx); drawNotes(); }
       else if (g('#sUseAi')) {
@@ -3025,6 +3661,7 @@ async function renderSourcing(body, live = () => true) {
       else if (g('#sManual')) { st.tab = 'links'; $('#srcTabs', body).outerHTML = tabsHtml(); draw(); }
       else if (g('#sCopyB')) srcCopy($s('sBool').textContent, 'Boolean string copied');
       else if ((el = g('[data-lx]'))) { st.locs = st.locs.filter(k => k !== el.dataset.lx); drawLocs(); info(); }
+      else if ((el = g('[data-ax]'))) { if (srcRemoveArea(st, el.dataset.ax)) { syncAreaBoxes(); drawAlso(true); info(); } }
       else if ((el = g('[data-s]'))) { st.sources[el.dataset.s] = !st.sources[el.dataset.s]; if (!Object.values(st.sources).some(Boolean)) st.sources[el.dataset.s] = true; drawSrc(); info(); }
       else if ((el = g('[data-n]'))) { const line = srcSkillLine(A().ns[+el.dataset.n]); st.skills = (st.skills.trim() ? st.skills.trim() + '\n' : '') + line; $s('sSkills').value = st.skills; el.remove(); info(); }
       else if ((el = g('[data-x]'))) { st.langs.splice(+el.dataset.x, 1); drawLangs(); info(); }
@@ -3040,10 +3677,10 @@ async function renderSourcing(body, live = () => true) {
       else if ((el = g('[data-m]'))) {
         const r = st.results[+el.dataset.m]; let saved = null;
         if (r.email && r.url) {   // a contact with an email can be emailed: it is saved to the pipeline first so the address is on file
-          try { await api.api_adminProspectsAdd(S.token, [srcPayload(r, st.area)]); st.saved[r.url] = true; saved = (await api.api_adminProspects(S.token)).find(x => x.url === r.url) || null; } catch (x) { if (isSessionErr(x)) return sessionLost(); }
+          try { const sa = srcSaveArea(st); await api.api_adminProspectsAdd(S.token, [srcPayload(r, sa.area, sa.also)]); st.saved[r.url] = true; saved = (await api.api_adminProspects(S.token)).find(x => x.url === r.url) || null; } catch (x) { if (isSessionErr(x)) return sessionLost(); }
         }
         const how = await srcContact(r, st, saved);
-        if (how === 'copied' || how === 'open') { try { const add = await api.api_adminProspectsAdd(S.token, [srcPayload(r, st.area)]); st.saved[r.url] = true; const list = await api.api_adminProspects(S.token); const p = list.find(x => x.url === r.url); if (p && how === 'copied') await api.api_adminProspectUpdate(S.token, p.id, { status: 'contacted' }); drawRes(); } catch (x) { /* saving is optional here */ } }
+        if (how === 'copied' || how === 'open') { try { const sa = srcSaveArea(st), add = await api.api_adminProspectsAdd(S.token, [srcPayload(r, sa.area, sa.also)]); st.saved[r.url] = true; const list = await api.api_adminProspects(S.token); const p = list.find(x => x.url === r.url); if (p && how === 'copied') await api.api_adminProspectUpdate(S.token, p.id, { status: 'contacted' }); drawRes(); } catch (x) { /* saving is optional here */ } }
       }
     };
     /* a single column (narrow window): after a search the results are scrolled into view and the count gets the focus, so nobody has to scroll past the form to find the candidates */
@@ -3070,7 +3707,7 @@ async function renderSourcing(body, live = () => true) {
         '<td class="nm" data-sv="' + esc(r.name) + '"><b>' + esc(r.name) + '</b><div class="hint">' + esc(r.source) + (ar ? ' · ' + esc(ar.es) : '') + '</div></td><td class="hl" data-sv="' + esc(r.headline) + '">' + esc(r.headline) + '<div class="hint">' + esc(r.location) + '</div></td>' +
         '<td data-sv="' + Object.keys(SRC_STATUS).indexOf(r.status) + '"><select data-f="status" aria-label="Status">' + Object.keys(SRC_STATUS).map(k => '<option value="' + k + '"' + (r.status === k ? ' selected' : '') + '>' + SRC_STATUS[k][0] + '</option>').join('') + '</select></td>' +
         '<td data-sv="' + esc(r.email) + '"><input type="email" data-f="email" value="' + esc(r.email) + '" placeholder="email" aria-label="Email"></td><td data-sv="' + esc(r.notes) + '"><input type="text" data-f="notes" value="' + esc(r.notes) + '" placeholder="notes" aria-label="Notes" maxlength="500"></td>' +
-        '<td style="white-space:nowrap">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Open ↗</a> ' : '') + '<button class="btn sm primary" data-a="msg">Message</button> <button class="btn sm" data-a="file" title="Open the candidate file (decision, documents, notes)">File</button> <button class="btn sm" data-a="sch" title="Send a link to choose an interview time">Schedule</button> <button class="btn sm" data-a="inv" title="Create a candidate with the tests for this area">Invite to test</button> <button class="btn sm ghost" data-a="bl" title="Do not contact" aria-label="Do not contact">⊘</button> <button class="btn sm danger" data-a="del" aria-label="Delete">✕</button></td></tr>'; }).join('') + '</tbody></table></div>' : L.length ? '<div class="card empty">No prospects match.</div>' : '<div class="card empty">No prospects yet. Search profiles and press “Save to pipeline”, or import a CSV file.</div>';
+        '<td style="white-space:nowrap">' + (u ? '<a class="btn sm" href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">Open ↗</a> ' : '') + '<button class="btn sm primary" data-a="msg">Message</button> <button class="btn sm" data-a="file" title="Open the candidate file (decision, documents, notes)">File</button> <button class="btn sm" data-a="sch" title="Send a link to choose an interview time">Schedule</button> <button class="btn sm" data-a="inv" title="Create a candidate with the tests for this area">Invite to test</button> <button class="btn sm ghost" data-a="bl" title="Do not contact" aria-label="Do not contact">⊘</button> <button class="btn sm danger" data-a="del" aria-label="Delete">✕</button></td></tr>'; }).join('') + '</tbody></table></div>' : L.length ? '<div class="card empty">No prospects match.</div>' : '<div class="card empty">No prospects yet. Search profiles and press “Save selected to pipeline”, or import a CSV file.</div>';
     };
     const drawBulk = () => { const n = L.filter(r => st.psel.has(r.id)).length, h = $('#pbulk', box); if (h) h.innerHTML = n ? '<div class="note ou-bulk" role="region" aria-label="Selected prospects"><b>' + n + ' selected</b><button class="btn sm primary" id="pSeq">Add to sequence…</button><button class="btn sm" id="pSelAll">Select all ' + rows().length + ' shown</button><button class="btn sm ghost" id="pClr">Clear</button></div>' : ''; };
     const syncPAll = () => { const a = $('#pAll', box); if (!a) return; const cs = $$('[data-psel]', box); a.checked = cs.length > 0 && cs.every(c => c.checked); a.indeterminate = !a.checked && cs.some(c => c.checked); };
@@ -3851,7 +4488,7 @@ async function renderTeam(body, live = () => true) {
     '<div class="team-grid"><div><div class="toolbar">' + srtSearchHtml('team', 'Search name, email, username or role…', 'Search the team', 'tQ') + '<span class="sp"></span><span class="hint" id="tCnt"></span></div><div id="tT"></div></div>' +
     '<div class="card"><h3>Add a team member</h3><p class="hint" style="margin:4px 0 0">A random password is created and shown once. It is emailed only if you tick the box.</p>' +
     '<label for="tN">Full name</label><input id="tN" type="text" maxlength="120"><label for="tE">Email</label><input id="tE" type="email" maxlength="120">' +
-    '<label for="tR">Role</label><select id="tR"><option value="hr">HR (candidates, documents, meetings, sourcing)</option><option value="admin">Admin (everything, Settings and Team)</option><option value="procurement">Procurement (Market Research only)</option></select>' +
+    '<label for="tR">Role</label><select id="tR"><option value="hr">HR (candidates, careers, hiring, meetings, sourcing, outreach)</option><option value="admin">Admin (everything, Settings and Team)</option><option value="procurement">Procurement (Market Research only)</option></select>' +
     '<label style="display:flex;gap:8px;align-items:center;font-weight:400;margin-top:12px"><input type="checkbox" id="tS" style="width:auto"> Email the credentials to this person</label>' +
     '<div id="tErr" class="err hidden"></div><button class="btn primary" id="tMake" style="margin-top:12px">Create account</button></div></div>';
   const drawTeam = () => {
@@ -4031,7 +4668,7 @@ async function openDetail(username, attemptNo, emailHint) {
       if (d) {
         h += (sim ? '' : '<span class="sep"></span>') + '<span class="lbl">Test</span>' + (!isLatest ? '<span class="hint">Earlier attempt (read-only).</span>' + b('goLatest', 'Open attempt ' + esc(lastNo) + ' to manage it') : '') +
           (isLatest && at && at.status !== 'in_progress' ? b('regrade', 'Regrade') + b('resend', 'Resend to HR') : '') +
-          (isLatest && d.canRetake && !d.user.retake ? b('retake', 'Allow 2nd attempt') : '') + (notStarted || d.user.retake ? b('chtest', 'Change test') : '') + (isLatest && at ? b('reset', 'Reset attempt', 'danger') : '');
+          (isLatest && d.canRetake && !d.user.retake ? b('retake', 'Allow 2nd attempt') : '') + (notStarted || d.user.retake ? b('chtest', 'Change test') : '') + (isLatest && at ? b('reset', 'Reset attempt', 'danger') : '') + (isAdminRole() ? b('delcand', 'Delete candidate', 'danger') : '');
       } else h += '<span class="sep"></span>' + b('aInvite', 'Invite to the assessment');
       return h + '</div>';
     };
@@ -4225,6 +4862,25 @@ async function openDetail(username, attemptNo, emailHint) {
             : 'Attempt ' + esc(attNo - 1) + ' is kept and becomes the current one. Afterwards check this page: if the candidate must repeat the attempt and it does not say “Second attempt allowed”, press “Allow 2nd attempt”.'), 'Reset attempt', 'danger')) {
           try { await api.api_adminReset(S.token, username, attNo); toast('Attempt reset'); if (live()) { first ? renderAdmin() : openDetail(username, null, email); } } catch (e) { fail(e); }
         }
+      },
+      /* admin only: shows what would go (dry run), asks for the username to be typed, then deletes the candidate for good */
+      delcand: async () => {
+        let pre; try { pre = await api.api_adminDeleteCandidate(S.token, { username, dryRun: true }); } catch (e) { return fail(e); }
+        const h = pre.hr || {}, hrN = (h.profile ? 1 : 0) + (h.applications || 0);
+        const vals = { u: '', hr: false };
+        const pm = modal('<h3>Delete this candidate?</h3><div><p style="margin:0 0 8px">This permanently deletes <b>' + esc(pre.name) + '</b> (' + esc(pre.username) + ') and everything the assessment stored about them. It cannot be undone.</p>' +
+          '<ul style="margin:0 0 10px;padding-left:18px"><li>' + pre.attempts + ' attempt(s), ' + pre.answers + ' answer(s) and ' + pre.events + ' log event(s)</li><li>' + pre.files + ' Drive file(s) (workbooks, recordings) go to the trash</li></ul>' +
+          (hrN || h.bookings || h.docs ? '<p style="margin:0 0 6px">HR records for <b>' + esc(pre.email) + '</b>: ' + (h.profile ? 'candidate file, ' : '') + (h.applications || 0) + ' careers application(s)' + (h.bookings ? ', ' + h.bookings + ' meeting booking(s)' : '') + (h.docs ? ', ' + h.docs + ' document request(s)' : '') + '.</p>' +
+            (hrN ? '<label style="display:flex;gap:8px;align-items:center;margin:6px 0;font-weight:400"><input type="checkbox" id="dcHr"> Also erase the HR candidate file and careers applications</label>' : '') +
+            (h.bookings || h.docs ? '<p class="hint" style="margin:0 0 6px">Meeting bookings and document requests are not deleted here: cancel them in their own tabs.</p>' : '') : '') +
+          '<label for="dcU" style="display:block;margin-top:8px">Type <b>' + esc(pre.username) + '</b> to confirm</label><input id="dcU" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></div>',
+          [{ label: 'Cancel', value: false }, { label: 'Delete candidate', value: true, kind: 'danger' }]);
+        const iu = $('#dcU'), ih = $('#dcHr');
+        if (iu) iu.addEventListener('input', () => { vals.u = iu.value; });
+        if (ih) ih.addEventListener('change', () => { vals.hr = ih.checked; });
+        if (!await pm) return;
+        if (vals.u.trim().toLowerCase() !== String(pre.username).toLowerCase()) return toast('The username you typed does not match: nothing was deleted.', 5000);
+        try { await api.api_adminDeleteCandidate(S.token, { username, confirm: true, hrFile: vals.hr }); toast('Candidate deleted'); if (live()) renderAdmin(); } catch (e) { fail(e); }
       }
     };
     root.addEventListener('click', e => { const b = e.target.closest('button[data-do],button[id]'); if (!b || b.disabled) return; const fn = H[b.dataset.do || b.id]; if (fn) fn(b); });
@@ -6790,13 +7446,16 @@ function mrBadge(vs) {
 
 /* ---------- role / navigation ---------- */
 function mrTabsFor(role) { const t = [['benchmark', 'Benchmark'], ['suppliers', 'Suppliers'], ['quotes', 'Quotes']]; if (role === 'admin') t.push(['data', 'Data']); return t; }
-/* which sidebar items a role sees: a procurement user sees only Market Research; HR does not see the admin-only items; an admin sees all */
-function mrVisibleTabs(role, keys, adminOnly) {
-  if (role === 'procurement') return keys.filter(k => k === 'market');
-  if (role === 'admin') return keys.slice();
-  if (role === 'hr') return keys.filter(k => adminOnly.indexOf(k) < 0);
-  return [];
-}
+/* Role views. ADMIN sees everything. PROCUREMENT sees only Market Research (the procurement team's tool). HR sees only the HR work: Overview, Candidates, Careers, Hiring,
+   Invite candidate, Meetings, Sourcing, Outreach and the Test catalog (no Market Research, no Settings, no Team). Any other role sees nothing. */
+const MR_HR_TABS = ['dash', 'cands', 'careers', 'hiring', 'new', 'meetings', 'sourcing', 'outreach', 'catalog'];
+function mrTabAllowed(role, tab) { return role === 'admin' ? true : role === 'procurement' ? tab === 'market' : role === 'hr' ? MR_HR_TABS.indexOf(tab) >= 0 : false; }
+/* the tab a role may open: the one asked for when it is allowed, else its landing page (procurement: Market Research, everyone else: Overview) */
+function mrClampTab(role, tab) { return tab && mrTabAllowed(role, tab) ? tab : role === 'procurement' ? 'market' : 'dash'; }
+/* which sidebar items a role sees */
+function mrVisibleTabs(role, keys, adminOnly) { return keys.filter(k => mrTabAllowed(role, k)); }
+/* Market Research is for admin and procurement only: a procurement person never sees the HR tools, HR never sees this one */
+const mrRoleCan = role => role === 'admin' || role === 'procurement';
 
 /* ---------- port type-ahead ---------- */
 const MR_NCACHE = typeof WeakMap === 'function' ? new WeakMap() : null;
@@ -7597,14 +8256,22 @@ function mrAiNoteLeft(A, res) {
 
 /* ====================== page code ====================== */
 function isProcRole() { return S.role === 'procurement'; }
-/* sidebar: a procurement user sees only Market Research (and Sign out); HR does not see Settings / Team; an admin sees everything */
+/* sidebar: a procurement user sees only Market Research (and Sign out); HR sees only the HR tools (no Market Research, Settings or Team); an admin sees everything */
 function mrShell() {
   if (ADM.mrUser !== S.username) { ADM.mr = null; ADM.mrUser = S.username; }   // never show one person's loaded data to the next sign-in
   const tabs = $$('#admTabs .tab'), keys = tabs.map(b => b.dataset.tab), adminOnly = tabs.filter(b => b.hasAttribute('data-admin-only')).map(b => b.dataset.tab), vis = mrVisibleTabs(S.role, keys, adminOnly);
   tabs.forEach(b => b.classList.toggle('hidden', vis.indexOf(b.dataset.tab) < 0));
-  const proc = isProcRole(), pw = $('#admPw'); if (pw) pw.classList.toggle('hidden', proc);
+  const proc = isProcRole(), pw = $('#admPw'); if (pw) { pw.classList.toggle('hidden', false); if (proc) pw.onclick = mrMyPassword; }   // procurement changes its own password too (its own API: the HR / admin dialog calls api_adminChangePassword, which is staff_ only); runs after hiringShell, so it wins
   const sb = $('.sbrand span:last-child'); if (sb) sb.textContent = proc ? 'Procurement' : 'Assessment admin';
-  if (proc) ADM.tab = 'market';
+  ADM.tab = mrClampTab(S.role, ADM.tab);   // a saved tab the role may not open (e.g. Market Research for HR) lands on the role's start page
+}
+/* procurement: "Password" in the sidebar (the HR / admin dialog calls a staff_ API that refuses this role) */
+async function mrMyPassword() {
+  const m = hiModal('<h3>Change my password</h3><label for="mpC">Current password</label><input id="mpC" type="password" autocomplete="current-password"><label for="mpN">New password</label><input id="mpN" type="password" autocomplete="new-password"><label for="mpR">Repeat the new password</label><input id="mpR" type="password" autocomplete="new-password"><p class="hint">At least 10 characters, with letters and numbers.</p>',
+    [{ label: 'Cancel', value: null }, { label: 'Change password', value: 'ok', kind: 'primary' }], r => ({ c: $('#mpC', r).value, n: $('#mpN', r).value, r: $('#mpR', r).value }));
+  if (await m.done !== 'ok') return; const v = m.get();
+  if (v.n !== v.r) return toast('The new passwords do not match.', 5000);
+  try { await mrApi('api_mrChangePassword', v.c, v.n); toast('Password changed. Use the new one next time you sign in.', 5000); } catch (e) { mrFail(e); }
 }
 function mrState() { return ADM.mr || (ADM.mr = { tab: 'benchmark', run: 0, ports: null, portsInfo: null, port: null, bench: null, benchSeq: 0, services: null, cmpKey: '', cmpCache: {}, sup: { port: null, category: '', status: '', q: '', offset: 0, limit: 100 }, qp: null, ro: null, timer: 0 }); }
 /* the AI finder state lives with the page state (ADM.mr), so results survive a tab change; a call still running when the page is redrawn is cancelled (guard) */
@@ -7615,6 +8282,7 @@ async function mrApi(name, ...args) {
   try { return await api[name](S.token, ...args); }
   catch (e) {
     if (name === 'api_mrQuoteDelete' && /^Not allowed$/.test((e && e.message) || '')) throw new Error('Only an admin or the person who saved the quote can delete it.');
+    if (/^Not allowed$/.test((e && e.message) || '') && S.role !== 'admin' && S.role !== 'procurement') throw new Error('Market Research is for the procurement team.');   // (an HR account on a page that still offered it: not a lost session)
     if (isSessionErr(e)) { sessionLost(); throw MR_STOP; }
     throw e;
   }
@@ -7689,6 +8357,7 @@ function mrComboBind(root, id, o) {
 async function renderMarket(body, live = () => true) {
   const st = mrState(), run = ++st.run, alive = () => live() && st.run === run && body.isConnected;
   body.onclick = body.onkeydown = body.oninput = body.onchange = null;
+  if (!mrRoleCan(S.role)) { body.innerHTML = phead('Market Research', '', '') + '<div class="card empty" role="alert">Market Research is for the procurement team. Ask an admin if you need access.</div>'; return; }   // never reached from the sidebar for HR (the tab is clamped); a belt for any other entry
   if (st.ro) { try { st.ro.disconnect(); } catch (e) { /* nothing to stop */ } st.ro = null; }
   clearTimeout(st.timer);
   const tabs = mrTabsFor(S.role); if (!tabs.some(t => t[0] === st.tab)) st.tab = tabs[0][0];
