@@ -2569,9 +2569,14 @@ function srtOrdered(arr, root, attr, idOf) {
  * ==================================================================== */
 (function sourcingStyle() {
   const s = document.createElement('style');
-  s.textContent = '.src-layout{display:grid;grid-template-columns:minmax(310px,390px) minmax(0,1fr);gap:16px;align-items:start}@media (max-width:1150px){.src-layout{grid-template-columns:1fr}}' +
-    '.src-form{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}@media (max-width:1150px){.src-form{position:static;max-height:none}}' +
-    '.src-form label{margin-top:11px}.src-form textarea{min-height:54px;font-size:13.5px}.src-form h4{margin:16px 0 0;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}' +
+  s.textContent = '.src-top{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px 18px;align-items:start}.src-top>.src-g,.src-top>#sNoProvBox{min-width:0}' +
+    '.src-top label{margin:0 0 4px;font-size:12px;font-weight:600;color:var(--muted)}.src-top label .hint{font-weight:400}.src-top textarea{min-height:44px;font-size:13.5px;resize:vertical}' +
+    '.src-g-area{grid-column:span 4}.src-g-titles{grid-column:span 5}.src-g-ql{grid-column:span 3}.src-g-locs{grid-column:span 8}.src-g-lang{grid-column:span 4}.src-g-src,.src-g-more,.src-g-go,.src-top>#sNoProvBox,.src-how{grid-column:1/-1}' +
+    '.src-locadd{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,230px);gap:8px;margin-top:8px}' +
+    '.src-g-more summary{cursor:pointer;font-weight:600;font-size:13px;padding:4px 0}.src-g-more summary .hint{font-weight:400;margin-left:6px}.src-morebody{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 18px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}' +
+    '.src-g-go{display:flex;gap:10px 18px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px}.src-gmeta{display:flex;flex-direction:column;gap:2px;min-width:0}.src-gmeta .src-sub{margin:0}.src-how summary{cursor:pointer;font-size:12.5px;color:var(--muted)}' +
+    '.src-sum{margin:0 0 8px}.src-flt{margin:0 0 8px;padding-bottom:8px;border-bottom:1px solid var(--line)}.src-flt .src-onlyrow{margin:0}.src-help{cursor:help;color:var(--muted);font-size:13px}.src-sel{display:inline-flex;gap:6px;align-items:center;margin:0;font-size:12.5px;font-weight:500;color:var(--muted)}.src-sel select{width:auto}' +
+    '@media (max-width:900px){.src-top>.src-g{grid-column:1/-1}.src-locadd{grid-template-columns:1fr}}' +
     '.src-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.src-row select{padding:7px 9px;font-size:14px}' +
     '.src-combo{position:relative}.src-combo input{width:100%;padding:7px 9px;font-size:14px}' +
     '.src-sug{position:absolute;left:0;right:0;top:100%;z-index:30;margin-top:3px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:0 8px 24px rgba(15,23,42,.16);max-height:280px;overflow:auto;min-width:240px}.src-sug.hidden{display:none}' +
@@ -2613,7 +2618,7 @@ function srtOrdered(arr, root, attr, idOf) {
 
 const SRC_KIND = { profiles: 'Profiles / CVs', jobs: 'Job boards', freelance: 'Freelance / hourly' };
 const SRC_MAX_LOCS = 8;
-const SRC_SINGLE_COL = '(max-width:1150px)';   /* the width under which the form and the results stack (the same number as the two @media rules of the style above) */
+const SRC_SCORE_HELP = 'The match score compares the profile text (title, snippet) with your titles, skills, places and languages. Open the profile to confirm.';
 const SRC_EUROPE = ['ES', 'DE', 'GB', 'IE', 'FR', 'IT', 'PT', 'GR', 'HR', 'ME', 'MT', 'TR', 'NO', 'DK', 'SE', 'EE', 'FI', 'NL', 'IS'], SRC_ASIA = ['PH', 'IN', 'SG', 'HK', 'JP', 'CN', 'TH', 'AU', 'NZ', 'AE', 'ZA', 'MU'];
 const SRC_LATAM = ['PA', 'CR', 'HN', 'GT', 'BZ', 'PE', 'EC', 'CL', 'AR', 'BR', 'UY', 'DO', 'PR'];
 /* per-country site domains for the manual links (the template holds the Colombian one) */
@@ -3381,24 +3386,25 @@ async function renderSourcing(body, live = () => true) {
   function tabSearch() {
     if (!st.titles) fillArea(true);
     const a = A(), hint0 = srcSearchHint(ADM.cfg.search, srcEngineCur(ADM.cfg.search, st.engine));
-    box.innerHTML = '<div class="src-layout"><div class="card src-form"><h3>Search profile</h3>' +
-      '<label for="sArea">Area of interest</label><select id="sArea">' + SRC.areas.map(x => '<option value="' + esc(x.key) + '">' + esc(x.es) + ' · ' + esc(x.en) + '</option>').join('') + '</select>' +
-      '<div class="src-also" id="sAlsoBox"></div>' +
-      '<label>Cities and ports <span class="hint">(several allowed; none = worldwide)</span></label><div class="src-chips" id="sLocs"></div>' +
-      '<div class="hint" id="sLocNote" style="margin-top:6px"></div>' +
-      '<div class="src-row" style="margin-top:8px;grid-template-columns:1fr"><div class="src-combo"><input id="sLocQ" type="text" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="sLocList" aria-autocomplete="list" aria-label="Type a city or port" placeholder="Type a city or port… (e.g. Portimão)"><div class="src-sug hidden" id="sLocList" role="listbox"></div></div>' +
-      '<select id="sLocGrp" aria-label="Add a whole region"><option value="">+ Add a whole region…</option>' + groups.map(g => '<option value="' + esc(g) + '">' + esc(g) + '</option>').join('') + '</select></div>' +
-      '<label>Languages <span class="hint">(searched in the profile)</span></label><div id="sLangs"></div><button class="btn sm" id="sAddLang" style="margin-top:6px">+ Add language</button>' +
-      '<label for="sTitles">Job titles</label><textarea id="sTitles" spellcheck="false" rows="2"></textarea>' +
-      '<label for="sSkills">Required skills <span class="hint">(one per line)</span></label><textarea id="sSkills" spellcheck="false" rows="3"></textarea><div class="src-chips add" id="sNice"></div>' +
-      '<label for="sEx">Exclude <span class="hint">(one per line)</span></label><textarea id="sEx" spellcheck="false" rows="2"></textarea>' +
-      '<h4>Preferences <span style="text-transform:none;letter-spacing:0">(raise the match score)</span></h4>' +
-      '<div class="src-row"><div><label for="sCon">Contract</label><select id="sCon">' + opt(T.contractTypes, x => x.en) + '</select></div><div><label for="sMode">Work mode</label><select id="sMode">' + opt(T.workModes, x => x.en) + '</select></div>' +
-      '<div><label for="sExp">Experience</label><select id="sExp">' + opt(T.experience, x => x.en) + '</select></div><div><label for="sAv">Availability</label><select id="sAv">' + opt(T.availability, x => x.en) + '</select></div></div>' +
-      '<h4>Where to look</h4><div class="src-chips" id="sSrc"></div><div class="src-xnote" id="sXing" role="status"></div><div class="src-row" style="margin-top:10px"><div><label for="sQL">Titles in</label><select id="sQL"><option value="both">Spanish + English</option><option value="es">Spanish</option><option value="en">English</option></select></div></div></div>' +
-      '<div><div class="card"><div class="src-go">' + srcGoButtonHtml(st.searching === true) + '<span id="sEngBox">' + srcEngineSegHtml(ADM.cfg.search, st.engine) + '</span></div><div class="hint" id="sCount" style="margin-top:8px"></div><div class="src-sub" id="sGoogleRow">' + srcGoogleLinkHtml('', 'or open this search in Google ↗') + '<span id="sGoogleN"></span></div><div id="sNoProvBox"></div>' +
-      (hint0 ? '<p class="hint" id="sAiHint" style="margin:10px 0 0">' + esc(hint0) + '</p>' : '') +
-      '<div id="sRes"></div></div><div class="card" style="margin-top:14px"><div class="toolbar" style="margin:0 0 6px"><h3>Boolean string</h3><span class="sp"></span><button class="btn sm" id="sCopyB">Copy</button></div><div class="hint">For LinkedIn Recruiter, CV databases and job-board search boxes.</div><div class="src-q" id="sBool" style="font:13px/1.5 ui-monospace,Consolas,monospace;background:var(--code-bg);color:var(--code-ink);padding:10px 12px;border-radius:var(--r-sm);white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto;margin-top:6px"></div></div></div></div>';
+    box.innerHTML = '<div class="card src-top">' +
+      '<div class="src-g src-g-area"><label for="sArea">Area of interest</label><select id="sArea">' + SRC.areas.map(x => '<option value="' + esc(x.key) + '">' + esc(x.es) + ' · ' + esc(x.en) + '</option>').join('') + '</select><div class="src-also" id="sAlsoBox"></div></div>' +
+      '<div class="src-g src-g-titles"><label for="sTitles">Job titles</label><textarea id="sTitles" spellcheck="false" rows="2"></textarea></div>' +
+      '<div class="src-g src-g-ql"><label for="sQL">Titles in</label><select id="sQL"><option value="both">Spanish + English</option><option value="es">Spanish</option><option value="en">English</option></select></div>' +
+      '<div class="src-g src-g-locs"><label>Cities and ports <span class="hint">none = worldwide</span></label><div class="src-chips" id="sLocs"></div>' +
+      '<div class="src-locadd"><div class="src-combo"><input id="sLocQ" type="text" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="sLocList" aria-autocomplete="list" aria-label="Type a city or port" placeholder="Type a city or port… (e.g. Portimão)"><div class="src-sug hidden" id="sLocList" role="listbox"></div></div>' +
+      '<select id="sLocGrp" aria-label="Add a whole region"><option value="">+ Add a whole region…</option>' + groups.map(g => '<option value="' + esc(g) + '">' + esc(g) + '</option>').join('') + '</select></div><div class="hint" id="sLocNote" style="margin-top:6px"></div></div>' +
+      '<div class="src-g src-g-lang"><label>Languages</label><div id="sLangs"></div><button class="btn sm" id="sAddLang" style="margin-top:6px">+ Add language</button></div>' +
+      '<div class="src-g src-g-src"><label>Where to look</label><div class="src-chips" id="sSrc"></div><div class="src-xnote" id="sXing" role="status"></div></div>' +
+      '<details class="src-g src-g-more" id="sMoreF"><summary>More filters <span class="hint">required skills, exclusions, preferences, Boolean string</span></summary><div class="src-morebody">' +
+      '<div><label for="sSkills">Required skills <span class="hint">one per line</span></label><textarea id="sSkills" spellcheck="false" rows="3"></textarea><div class="src-chips add" id="sNice"></div></div>' +
+      '<div><label for="sEx">Exclude <span class="hint">one per line</span></label><textarea id="sEx" spellcheck="false" rows="3"></textarea></div>' +
+      '<div><label>Preferences <span class="hint">raise the match score</span></label><div class="src-row"><div><label for="sCon">Contract</label><select id="sCon">' + opt(T.contractTypes, x => x.en) + '</select></div><div><label for="sMode">Work mode</label><select id="sMode">' + opt(T.workModes, x => x.en) + '</select></div>' +
+      '<div><label for="sExp">Experience</label><select id="sExp">' + opt(T.experience, x => x.en) + '</select></div><div><label for="sAv">Availability</label><select id="sAv">' + opt(T.availability, x => x.en) + '</select></div></div></div>' +
+      '<div><div class="toolbar" style="margin:0 0 6px"><label style="margin:0">Boolean string</label><span class="hint">for LinkedIn Recruiter and job-board search boxes</span><span class="sp"></span><button class="btn sm" id="sCopyB">Copy</button></div><div class="src-q" id="sBool" style="font:13px/1.5 ui-monospace,Consolas,monospace;background:var(--code-bg);color:var(--code-ink);padding:10px 12px;border-radius:var(--r-sm);white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto"></div></div>' +
+      '</div></details>' +
+      '<div class="src-g src-g-go"><div class="src-go">' + srcGoButtonHtml(st.searching === true) + '<span id="sEngBox">' + srcEngineSegHtml(ADM.cfg.search, st.engine) + '</span></div><div class="src-gmeta"><span class="hint" id="sCount"></span><div class="src-sub" id="sGoogleRow">' + srcGoogleLinkHtml('', 'or open this search in Google ↗') + '<span id="sGoogleN"></span></div></div></div><div id="sNoProvBox"></div>' +
+      (hint0 ? '<details class="src-how"><summary>How this search works</summary><p class="hint" id="sAiHint" style="margin:6px 0 0">' + esc(hint0) + '</p></details>' : '') +
+      '</div><div class="card" style="margin-top:14px"><div id="sRes"></div></div>';
     const $s = id => $('#' + id, box);
     const sync = () => {
       $s('sArea').value = st.area; $s('sQL').value = st.qlang; drawAlso(); $s('sTitles').value = st.titles; $s('sSkills').value = st.skills; $s('sEx').value = st.exclude;
@@ -3451,13 +3457,14 @@ async function renderSourcing(body, live = () => true) {
     function drawRes() {
       const R = st.results, res = $s('sRes'); if (!R) { res.innerHTML = '<div class="hint" style="margin-top:12px">Choose the filters and press <b>Search profiles</b>. The best matches are listed first.</div>'; return; }
       const locs = [...new Set(R.map(r => r.loc).filter(Boolean))];
+      /* two tidy rows: the summary and the actions that save or export (the count, who searched, Find more | Export, Save...), then the filters of the list (search, top, place, sort, only this place) */
       res.innerHTML = '<div id="sNotes"></div>' +
-        '<div class="src-bar"><b id="sResCount" tabindex="-1">' + R.length + ' profile' + (R.length === 1 ? '' : 's') + '</b>' + srcMoreHtml({ show: !!st.moreOk && (st.rounds || 1) < SRC_MAX_ROUNDS, done: !!st.moreOk && (st.rounds || 1) >= SRC_MAX_ROUNDS, busy: st.searching === true, n: srcMoreCount(st, ADM.cfg.search, srcEngineShown(ADM.cfg.search) ? srcEngineCur(ADM.cfg.search, st.engine) : ''), round: (st.rounds || 1) + 1 }) + (st.moreNote ? '<span class="hint" id="sMoreNote" role="status">' + esc(srcMoreNoteText(st.moreNote)) + '</span>' : '') + (st.via ? '<span class="hint">via ' + esc(st.via) + '</span>' : '') + '<span class="hint">showing the top</span><select id="sTop" aria-label="How many to show">' + [10, 25, 50, 100].map(n => '<option' + (n === st.top ? ' selected' : '') + '>' + n + '</option>').join('') + '</select>' +
+        '<div class="src-bar src-sum"><b id="sResCount" tabindex="-1">' + R.length + ' profile' + (R.length === 1 ? '' : 's') + '</b>' + (st.via ? '<span class="hint">via ' + esc(st.via) + '</span>' : '') + '<span class="src-help" tabindex="0" role="note" aria-label="How the match score works" title="' + esc(SRC_SCORE_HELP) + '">ⓘ</span>' + srcMoreHtml({ show: !!st.moreOk && (st.rounds || 1) < SRC_MAX_ROUNDS, done: !!st.moreOk && (st.rounds || 1) >= SRC_MAX_ROUNDS, busy: st.searching === true, n: srcMoreCount(st, ADM.cfg.search, srcEngineShown(ADM.cfg.search) ? srcEngineCur(ADM.cfg.search, st.engine) : ''), round: (st.rounds || 1) + 1 }) + (st.moreNote ? '<span class="hint" id="sMoreNote" role="status">' + esc(srcMoreNoteText(st.moreNote)) + '</span>' : '') +
+        '<span class="sp"></span><button class="btn sm" id="sXlsx" title="Excel file with all the loaded profiles (also the ones hidden by the filters) and a sheet with the search">⤓ Export Excel</button><button class="btn sm" id="sSaveSel" title="' + esc(SRC_PIPE_TIP) + '">Save selected to pipeline</button><button class="btn sm" id="sSeqSel" title="Save the ticked profiles to the pipeline and add them to an outreach sequence">Add selected to sequence…</button><button class="btn sm primary" id="sSaveAll" title="' + esc(SRC_PIPE_TIP) + '">Save these to pipeline</button></div>' + (st.hintSeen || srcHintSeen(srcStore()) ? '' : srcPipeHintHtml()) +
+        '<div class="src-bar src-flt">' + srtSearchHtml('src-res', 'Search name, headline or place…', 'Search the results', 'sQ') + '<span class="hint" id="sRn"></span><label class="src-sel">Top <select id="sTop" aria-label="How many to show">' + [10, 25, 50, 100].map(n => '<option' + (n === st.top ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></label>' +
         (locs.length > 1 ? '<select id="sLf" aria-label="Filter by place"><option value="">All places</option>' + locs.map(l => '<option' + (l === st.locFilter ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>' : '') +
-        '<select id="sSort" aria-label="Sort by">' + SRC_SORTS.map(o => '<option value="' + o[0] + '"' + (o[0] === (st.sortBy || 'score') ? ' selected' : '') + '>Sort: ' + esc(o[1]) + '</option>').join('') + '</select>' +
-        srtSearchHtml('src-res', 'Search name, headline or place…', 'Search the results', 'sQ') + '<span class="hint" id="sRn"></span><span class="sp"></span><button class="btn sm" id="sXlsx" title="Excel file with all the loaded profiles (also the ones hidden by the filters) and a sheet with the search">⤓ Export Excel</button><button class="btn sm" id="sSaveSel" title="' + esc(SRC_PIPE_TIP) + '">Save selected to pipeline</button><button class="btn sm" id="sSeqSel" title="Save the ticked profiles to the pipeline and add them to an outreach sequence">Add selected to sequence…</button><button class="btn sm primary" id="sSaveAll" title="' + esc(SRC_PIPE_TIP) + '">Save these to pipeline</button></div>' + (st.hintSeen || srcHintSeen(srcStore()) ? '' : srcPipeHintHtml()) +
-        '<div class="src-onlyrow" id="sOnlyBox"></div>' + srcWeakHtml(st.hiddenWeak, st.loose, st.hiddenNoTitle) + '<div id="sResT"></div>' +
-        '<div class="hint" style="margin-top:8px">The match score compares the profile text (title, snippet) with your titles, skills, places and languages. Open the profile to confirm.</div>';
+        '<select id="sSort" aria-label="Sort by">' + SRC_SORTS.map(o => '<option value="' + o[0] + '"' + (o[0] === (st.sortBy || 'score') ? ' selected' : '') + '>Sort: ' + esc(o[1]) + '</option>').join('') + '</select><div class="src-onlyrow" id="sOnlyBox"></div></div>' +
+        srcWeakHtml(st.hiddenWeak, st.loose, st.hiddenNoTitle) + '<div id="sResT"></div>';
       drawNotes(); drawResT();
     }
     function drawResT() {
@@ -3687,8 +3694,8 @@ async function renderSourcing(body, live = () => true) {
         if (how === 'copied' || how === 'open') { try { const sa = srcSaveArea(st), add = await api.api_adminProspectsAdd(S.token, [srcPayload(r, sa.area, sa.also)]); st.saved[r.url] = true; const list = await api.api_adminProspects(S.token); const p = list.find(x => x.url === r.url); if (p && how === 'copied') await api.api_adminProspectUpdate(S.token, p.id, { status: 'contacted' }); drawRes(); } catch (x) { /* saving is optional here */ } }
       }
     };
-    /* a single column (narrow window): after a search the results are scrolled into view and the count gets the focus, so nobody has to scroll past the form to find the candidates */
-    const reveal = () => { try { if (window.matchMedia && window.matchMedia(SRC_SINGLE_COL).matches) { const rs = $s('sRes'); if (rs && rs.scrollIntoView) rs.scrollIntoView({ block: 'start' }); const c = $s('sResCount'); if (c && c.focus) c.focus({ preventScroll: true }); } } catch (e) { /* only a convenience */ } };
+    /* the filters sit above the list: after a search the results are scrolled into view when they start below the fold and the count gets the focus, so nobody has to scroll past the filters to find the candidates */
+    const reveal = () => { try { const rs = $s('sRes'); if (rs && rs.scrollIntoView && rs.getBoundingClientRect && rs.getBoundingClientRect().top > window.innerHeight * 0.7) rs.scrollIntoView({ block: 'start' }); const c = $s('sResCount'); if (c && c.focus) c.focus({ preventScroll: true }); } catch (e) { /* only a convenience */ } };
     st.ui = { $s: $s, drawRes: drawRes, info: info, showNoProv: showNoProv, reveal: reveal, alive: () => box.isConnected };   // what go() draws into when it ends
     const prevKey = box.onkeydown;   // the place type-ahead handler set above: keep it next to the source-chip keys
     box.onkeydown = e => { if (prevKey) prevKey(e); const s = e.target.closest && e.target.closest('[data-s]'); if (s && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); s.click(); } };
